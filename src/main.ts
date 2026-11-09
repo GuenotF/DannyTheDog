@@ -15,7 +15,7 @@ import { renderData, type DataUi } from './ui/data';
 registerSW({ immediate: true });
 
 let data: AppData = load();
-const ui: DataUi & { toast: string | null } = { persisted: null, pendingImport: null, confirmClear: false, toast: null };
+const ui: DataUi & { toast: string | null; confirmCancel: boolean } = { persisted: null, pendingImport: null, confirmClear: false, toast: null, confirmCancel: false };
 let pendingBackup: AppData | null = null;
 const app = document.getElementById('app')!;
 
@@ -63,8 +63,8 @@ function render() {
     location.replace(r === 'home' ? '#/' : `#/${r}`);
   }
   let html = '';
-  if (r === 'seance' && s) html = renderSession(data, s);
-  else if (r === 'fin' && s) html = renderSummary(data, s);
+  if (r === 'seance' && s) html = renderSession(data, s, ui.confirmCancel);
+  else if (r === 'fin' && s) html = renderSummary(data, s, ui.confirmCancel);
   else if (r === 'donnees') html = renderData(data, ui);
   else html = renderHome(data);
   if (ui.toast) html += `<div class="toast" role="status">${ui.toast}</div>`;
@@ -76,6 +76,7 @@ function render() {
 let lastRoute: Route | null = null;
 window.addEventListener('hashchange', () => {
   const r = route();
+  ui.confirmCancel = false;
   render();
   if (r !== lastRoute) window.scrollTo(0, 0);
   lastRoute = r;
@@ -213,6 +214,22 @@ const actions: Record<string, (el: HTMLElement) => void> = {
     data.active!.feeling = Number(el.dataset.v);
     persist();
     render();
+  },
+  'cancel-ask'() {
+    ui.confirmCancel = true;
+    render();
+    document.getElementById('cancel-dialog')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  },
+  'cancel-dismiss'() {
+    ui.confirmCancel = false;
+    render();
+  },
+  'cancel-confirm'() {
+    data.active = null;
+    ui.confirmCancel = false;
+    persist();
+    go('home');
+    toast('Séance annulée');
   },
   commit() {
     commitSession(data);

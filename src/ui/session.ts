@@ -104,7 +104,17 @@ function renderBlock(data: AppData, s: ActiveSession, b: BlockLog, bi: number): 
     </section>`;
 }
 
-export function renderSession(data: AppData, s: ActiveSession): string {
+export function cancelBlock(confirming: boolean): string {
+  return confirming
+    ? `<div class="dialog" id="cancel-dialog" role="dialog" aria-label="Annuler la séance" style="border-color:var(--danger)">
+        <span class="small">La séance sera supprimée : rien n'est enregistré et les charges ne changent pas.</span>
+        <button type="button" class="btn" style="color:var(--danger);border-color:var(--danger)" data-action="cancel-confirm">Oui, annuler la séance</button>
+        <button type="button" class="btn btn-ghost" data-action="cancel-dismiss">Non, continuer</button>
+      </div>`
+    : `<button type="button" class="btn btn-danger" data-action="cancel-ask">Annuler la séance…</button>`;
+}
+
+export function renderSession(data: AppData, s: ActiveSession, confirmCancel = false): string {
   const t = templateById(data, s.templateId);
   const { done, total } = countSets(s);
   return `
@@ -123,6 +133,7 @@ export function renderSession(data: AppData, s: ActiveSession): string {
     <main class="section" style="gap:16px">
       ${s.blocks.map((b, bi) => renderBlock(data, s, b, bi)).join('')}
       <button type="button" class="btn btn-primary" data-action="finish">Terminer la séance</button>
+      ${cancelBlock(confirmCancel)}
     </main>
     <div class="timer" role="timer" aria-live="off">
       <div class="card">

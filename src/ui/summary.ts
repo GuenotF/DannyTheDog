@@ -1,11 +1,11 @@
 import type { ActiveSession, AppData } from '../types';
 import { escapeHtml as e, formatDate, formatNumber, formatWeight } from '../format';
 import { exerciseById, templateById } from '../store';
-import { countSets } from './session';
+import { cancelBlock, countSets } from './session';
 
 const ICON = { up: '↑', same: '=', down: '↓' } as const;
 
-export function renderSummary(data: AppData, s: ActiveSession): string {
+export function renderSummary(data: AppData, s: ActiveSession, confirmCancel = false): string {
   const t = templateById(data, s.templateId);
   const { done, total } = countSets(s);
   const minutes = Math.round(((s.finishedAt ?? Date.now()) - s.startedAt) / 60000);
@@ -67,6 +67,7 @@ export function renderSummary(data: AppData, s: ActiveSession): string {
     <div class="section" style="margin-top:auto">
       <button type="button" class="btn btn-primary" data-action="commit">Enregistrer la séance</button>
       <button type="button" class="btn btn-ghost" data-action="resume">Revenir à la séance</button>
+      ${cancelBlock(confirmCancel)}
     </div>
   </div>`;
 }
