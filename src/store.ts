@@ -1,6 +1,6 @@
 import exercisesJson from './data/exercises.json';
 import templatesJson from './data/templates.json';
-import type { ActiveSession, AppData, Exercise, ExerciseLog, ExerciseProgress, SessionRecord, Template } from './types';
+import type { ActiveSession, AppData, BodyEntry, Exercise, ExerciseLog, ExerciseProgress, SessionRecord, Template } from './types';
 import { decide } from './progression';
 
 const KEY = 'dannythedog:data';
@@ -15,6 +15,7 @@ export function seed(): AppData {
     templates: templatesJson as Template[],
     progress,
     history: [],
+    body: [],
     active: null,
     lastExport: null,
     settings: { footDay: 1 }
@@ -44,6 +45,7 @@ export function save(data: AppData): void {
 
 /** Ajoute les exercices du catalogue apparus dans une nouvelle version de l'appli. */
 function withNewCatalogEntries(data: AppData): AppData {
+  if (!Array.isArray(data.body)) data.body = [];
   for (const ex of exercisesJson as Exercise[]) {
     if (!data.exercises.some((e) => e.id === ex.id)) data.exercises.push(ex);
     if (!data.progress[ex.id]) data.progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
@@ -78,7 +80,7 @@ export function progressOf(data: AppData, id: string): ExerciseProgress {
   return data.progress[id] ?? { weight: null, failStreak: 0, lastChange: 0 };
 }
 
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 export function startSession(data: AppData, templateId: string, now = Date.now()): ActiveSession {
   const t = templateById(data, templateId);
@@ -196,6 +198,8 @@ export function mergeBackup(data: AppData, backup: AppData): AppData {
   const known = new Set(data.history.map((h) => h.id));
   merged.history = [...data.history, ...backup.history.filter((h) => !known.has(h.id))].sort((a, b) => a.endedAt - b.endedAt);
   merged.progress = { ...backup.progress, ...data.progress };
+  const bodyIds = new Set((data.body ?? []).map((b) => b.id));
+  merged.body = [...(data.body ?? []), ...(backup.body ?? []).filter((b) => !bodyIds.has(b.id))].sort((a, b) => a.at - b.at);
   return merged;
 }
 
@@ -212,4 +216,33 @@ export function addTemplate(data: AppData, template: Template, exercises: Exerci
   const copy = { ...template, id, name: id === template.id ? template.name : `${template.name} (${n - 1})` };
   data.templates.push(copy);
   return copy;
+}
+
+/* ---------- Historique ---------- */
+
+export function deleteSession(data: AppData, id: string): void {
+  data.history = data.history.filter((h) => h.id !== id);
+}
+
+/* ---------- Mesures corporelles ---------- */
+
+const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
+
+/** Ajoute une mesure ; une seconde mesure le même jour remplace la première. */
+export function addBodyEntry(data: AppData, weight: number | null, waist: number | null, at = Date.now()): BodyEntry {
+  const existing = data.body.find((b) => sameDay(b.at, at));
+  if (existing) {
+    existing.weight = weight;
+    existing.waist = waist;
+    existing.at = at;
+    return existing;
+  }
+  const entry: BodyEntry = { id: uid(), at, weight, waist };
+  data.body.push(entry);
+  data.body.sort((a, b) => a.at - b.at);
+  return entry;
+}
+
+export function deleteBodyEntry(data: AppData, id: string): void {
+  data.body = data.body.filter((b) => b.id !== id);
 }

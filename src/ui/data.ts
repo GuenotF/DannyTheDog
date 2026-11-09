@@ -50,7 +50,7 @@ export function renderData(data: AppData, ui: DataUi): string {
       </div>
       <div class="stats" style="gap:8px">
         <div class="section" style="gap:2px"><b class="title" style="font-size:22px">${data.history.length}</b><span class="muted xsmall">séances</span></div>
-        <div class="section" style="gap:2px"><b class="title" style="font-size:22px">${data.templates.length}</b><span class="muted xsmall">modèles</span></div>
+        <div class="section" style="gap:2px"><b class="title" style="font-size:22px">${data.body.length}</b><span class="muted xsmall">mesures</span></div>
         <div class="section" style="gap:2px"><b class="title" style="font-size:22px">${sizeKb} Ko</b><span class="muted xsmall">utilisés</span></div>
       </div>
     </section>

@@ -2,7 +2,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import type { AppData } from './types';
 import {
-  addTemplate, commitSession, computeDecisions, exerciseById, exportAll, exportTemplate,
+  addBodyEntry, addTemplate, commitSession, deleteBodyEntry, deleteSession, computeDecisions, exerciseById, exportAll, exportTemplate,
   load, mergeBackup, parseImport, requestPersistence, save, seed, startSession
 } from './store';
 import { kindFor, roundToStep } from './progression';
@@ -11,12 +11,24 @@ import { renderHome } from './ui/home';
 import { nextSetLabel, renderSession, restAfter } from './ui/session';
 import { renderSummary } from './ui/summary';
 import { renderData, type DataUi } from './ui/data';
+import { renderHistory, type HistoryUi } from './ui/history';
+import { renderProgress, type ProgressUi } from './ui/progress';
+import { bodyDefaults, renderBody, type BodyUi } from './ui/body';
 
 registerSW({ immediate: true });
 
 let data: AppData = load();
 const ui: DataUi & { toast: string | null; confirmCancel: boolean } = { persisted: null, pendingImport: null, confirmClear: false, toast: null, confirmCancel: false };
 let pendingBackup: AppData | null = null;
+const hist: HistoryUi = { filter: 'Toutes', open: null, confirmDelete: null };
+const prog: ProgressUi = { exercise: null, selected: null };
+const body: BodyUi = { metric: 'weight', selected: null, draftWeight: null, draftWaist: null };
+function resetBodyDraft() {
+  const d = bodyDefaults(data);
+  body.draftWeight = d.weight;
+  body.draftWaist = d.waist;
+}
+resetBodyDraft();
 const app = document.getElementById('app')!;
 
 requestPersistence().then((p) => {
@@ -26,11 +38,12 @@ requestPersistence().then((p) => {
 
 /* ---------- Navigation ---------- */
 
-type Route = 'home' | 'seance' | 'fin' | 'donnees';
+type Route = 'home' | 'seance' | 'fin' | 'donnees' | 'historique' | 'progres' | 'corps';
+const ROUTES: Route[] = ['seance', 'fin', 'donnees', 'historique', 'progres', 'corps'];
 
 function route(): Route {
-  const h = location.hash.replace(/^#\/?/, '');
-  return h === 'seance' || h === 'fin' || h === 'donnees' ? h : 'home';
+  const h = location.hash.replace(/^#\/?/, '') as Route;
+  return ROUTES.includes(h) ? h : 'home';
 }
 
 function go(r: Route) {
@@ -66,6 +79,9 @@ function render() {
   if (r === 'seance' && s) html = renderSession(data, s, ui.confirmCancel);
   else if (r === 'fin' && s) html = renderSummary(data, s, ui.confirmCancel);
   else if (r === 'donnees') html = renderData(data, ui);
+  else if (r === 'historique') html = renderHistory(data, hist);
+  else if (r === 'progres') html = renderProgress(data, prog);
+  else if (r === 'corps') html = renderBody(data, body);
   else html = renderHome(data);
   if (ui.toast) html += `<div class="toast" role="status">${ui.toast}</div>`;
   app.innerHTML = html;
@@ -238,6 +254,76 @@ const actions: Record<string, (el: HTMLElement) => void> = {
     toast('Séance enregistrée');
   },
 
+  /* ---------- Historique ---------- */
+  'hist-filter'(el) {
+    hist.filter = el.dataset.id!;
+    render();
+  },
+  'hist-toggle'(el) {
+    hist.open = hist.open === el.dataset.id ? null : el.dataset.id!;
+    hist.confirmDelete = null;
+    render();
+  },
+  'hist-delete-ask'(el) {
+    hist.confirmDelete = el.dataset.id!;
+    render();
+  },
+  'hist-delete-cancel'() {
+    hist.confirmDelete = null;
+    render();
+  },
+  'hist-delete'(el) {
+    deleteSession(data, el.dataset.id!);
+    hist.open = null;
+    hist.confirmDelete = null;
+    persist();
+    toast('Séance supprimée');
+  },
+
+  /* ---------- Progrès et graphiques ---------- */
+  'prog-pick'(el) {
+    prog.exercise = el.dataset.id!;
+    prog.selected = null;
+    render();
+    if (el.classList.contains('table-row')) window.scrollTo({ top: 0, behavior: 'smooth' });
+  },
+  'chart-pick'(el) {
+    const i = Number(el.dataset.i);
+    if (el.dataset.chart === 'prog') prog.selected = i;
+    else body.selected = i;
+    render();
+  },
+
+  /* ---------- Corps ---------- */
+  'body-step'(el) {
+    const dir = Number(el.dataset.dir);
+    if (el.dataset.key === 'weight') {
+      body.draftWeight = Math.max(0, Math.round(((body.draftWeight ?? 60) + 0.1 * dir) * 10) / 10);
+    } else {
+      const base = body.draftWaist ?? [...data.body].reverse().find((b) => b.waist !== null)?.waist ?? 75;
+      body.draftWaist = body.draftWaist === null ? base : Math.max(0, Math.round((base + 0.5 * dir) * 10) / 10);
+    }
+    render();
+  },
+  'body-save'() {
+    if (body.draftWeight === null && body.draftWaist === null) return toast('Saisis au moins une mesure');
+    addBodyEntry(data, body.draftWeight, body.draftWaist);
+    body.selected = null;
+    persist();
+    toast('Mesure enregistrée');
+  },
+  'body-metric'(el) {
+    body.metric = el.dataset.id === 'waist' ? 'waist' : 'weight';
+    body.selected = null;
+    render();
+  },
+  'body-delete'(el) {
+    deleteBodyEntry(data, el.dataset.id!);
+    body.selected = null;
+    persist();
+    toast('Mesure supprimée');
+  },
+
   /* ---------- Données ---------- */
   'export-all'() {
     download(`dannythedog-${today()}.json`, exportAll(data));
@@ -256,7 +342,8 @@ const actions: Record<string, (el: HTMLElement) => void> = {
   },
   'import-replace'() {
     if (!pendingBackup) return;
-    data = { ...pendingBackup, active: null };
+    data = { ...pendingBackup, body: pendingBackup.body ?? [], active: null };
+    resetBodyDraft();
     finishImport('Données remplacées');
   },
   'import-cancel'() {
@@ -274,6 +361,7 @@ const actions: Record<string, (el: HTMLElement) => void> = {
   },
   'clear-confirm'() {
     data = seed();
+    resetBodyDraft();
     ui.confirmClear = false;
     persist();
     toast('Données effacées');
@@ -320,6 +408,11 @@ app.addEventListener('change', async (ev) => {
     setWeight(el.dataset.key!, Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null);
     persist();
     render();
+  } else if (kind === 'body-input') {
+    const v = parseFloat(el.value.replace(',', '.'));
+    const val = Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null;
+    if (el.dataset.key === 'weight') body.draftWeight = val;
+    else body.draftWaist = val;
   } else if (kind === 'apply-next') {
     data.active!.applyNext = el.checked;
     persist();

@@ -100,12 +100,21 @@ export interface ExerciseProgress {
   lastChange: number;
 }
 
+export interface BodyEntry {
+  id: string;
+  /** Horodatage de la mesure. */
+  at: number;
+  weight: number | null;
+  waist: number | null;
+}
+
 export interface AppData {
   version: 1;
   exercises: Exercise[];
   templates: Template[];
   progress: Record<string, ExerciseProgress>;
   history: SessionRecord[];
+  body: BodyEntry[];
   active: ActiveSession | null;
   lastExport: string | null;
   settings: { footDay: number | null };

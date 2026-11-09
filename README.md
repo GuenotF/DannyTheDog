@@ -16,6 +16,13 @@ Sur Android, ouvre le lien dans Chrome puis « Ajouter à l'écran d'accueil » 
   - gainage / poids du corps : pas de charge, objectif indiqué.
 - **Données** : tout est stocké dans le navigateur (localStorage). Export / import JSON complet (fusion ou remplacement) et partage d'un modèle de séance.
 
+## Suivi (V2)
+
+- **Barre d'onglets** : Accueil, Historique, Progrès, Corps (masquée pendant une séance).
+- **Historique** : séances groupées par semaine, filtre par séance, détail dépliable (reps, charge, évolution), « Refaire cette séance », suppression.
+- **Progrès** : courbe de la charge de travail par exercice (tap sur un point pour le détail), départ, record, tableau de toutes les charges.
+- **Corps** : saisie du poids et du tour de taille (une mesure par jour), courbes et dernières mesures.
+
 ## Données de base
 
 - `src/data/exercises.json` : catalogue d'exercices (`kind` : `heavy`, `isolation`, `timed`, `bodyweight` ; `step` : pas de charge ; `startWeight` : charge de départ).

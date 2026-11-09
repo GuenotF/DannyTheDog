@@ -2,6 +2,7 @@ import type { AppData, Template } from '../types';
 import { escapeHtml as e, formatDate, formatNumber, formatWeight } from '../format';
 import { exerciseById, progressOf } from '../store';
 import { icons } from './icons';
+import { renderNav } from './nav';
 
 const DAY_LABELS = ['Lu', 'Ma', 'Me', 'Je', 'Ve', 'Sa', 'Di'];
 const DAY_NAMES = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
@@ -110,7 +111,7 @@ export function renderHome(data: AppData, now = new Date()): string {
     : '';
 
   return `
-  <div class="screen">
+  <div class="screen with-nav">
     <header class="row between">
       <div class="row" style="gap:10px"><span class="logo">${icons.logo}</span><span class="title" style="font-size:20px">Danny the DOG</span></div>
       <a class="icon-btn" href="#/donnees" aria-label="Données et sauvegarde">${icons.data}</a>
@@ -122,5 +123,6 @@ export function renderHome(data: AppData, now = new Date()): string {
     ${main}
     ${others ? `<section class="section" aria-label="Autres séances"><h2 style="font-size:15px;font-weight:600">${active ? 'Séances' : 'Autres séances'}</h2>${others}</section>` : ''}
     ${banner}
-  </div>`;
+  </div>
+  ${renderNav('home')}`;
 }
