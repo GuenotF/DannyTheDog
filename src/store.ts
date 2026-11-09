@@ -1,0 +1,215 @@
+import exercisesJson from './data/exercises.json';
+import templatesJson from './data/templates.json';
+import type { ActiveSession, AppData, Exercise, ExerciseLog, ExerciseProgress, SessionRecord, Template } from './types';
+import { decide } from './progression';
+
+const KEY = 'dannythedog:data';
+
+export function seed(): AppData {
+  const exercises = exercisesJson as Exercise[];
+  const progress: Record<string, ExerciseProgress> = {};
+  for (const ex of exercises) progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
+  return {
+    version: 1,
+    exercises,
+    templates: templatesJson as Template[],
+    progress,
+    history: [],
+    active: null,
+    lastExport: null,
+    settings: { footDay: 1 }
+  };
+}
+
+export function load(): AppData {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (isAppData(parsed)) return withNewCatalogEntries(parsed);
+    }
+  } catch {
+    /* données illisibles : on repart des données par défaut */
+  }
+  return seed();
+}
+
+export function save(data: AppData): void {
+  try {
+    localStorage.setItem(KEY, JSON.stringify(data));
+  } catch (err) {
+    console.error('Sauvegarde impossible', err);
+  }
+}
+
+/** Ajoute les exercices du catalogue apparus dans une nouvelle version de l'appli. */
+function withNewCatalogEntries(data: AppData): AppData {
+  for (const ex of exercisesJson as Exercise[]) {
+    if (!data.exercises.some((e) => e.id === ex.id)) data.exercises.push(ex);
+    if (!data.progress[ex.id]) data.progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
+  }
+  return data;
+}
+
+export function isAppData(v: unknown): v is AppData {
+  const d = v as AppData;
+  return !!d && d.version === 1 && Array.isArray(d.exercises) && Array.isArray(d.templates) && Array.isArray(d.history) && typeof d.progress === 'object';
+}
+
+export async function requestPersistence(): Promise<boolean> {
+  try {
+    if (navigator.storage?.persisted && (await navigator.storage.persisted())) return true;
+    if (navigator.storage?.persist) return await navigator.storage.persist();
+  } catch {
+    /* ignoré */
+  }
+  return false;
+}
+
+export function exerciseById(data: AppData, id: string): Exercise {
+  return data.exercises.find((e) => e.id === id) ?? { id, name: id, kind: 'isolation', step: 2.5, startWeight: null };
+}
+
+export function templateById(data: AppData, id: string): Template | undefined {
+  return data.templates.find((t) => t.id === id);
+}
+
+export function progressOf(data: AppData, id: string): ExerciseProgress {
+  return data.progress[id] ?? { weight: null, failStreak: 0, lastChange: 0 };
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+export function startSession(data: AppData, templateId: string, now = Date.now()): ActiveSession {
+  const t = templateById(data, templateId);
+  if (!t) throw new Error(`Séance inconnue : ${templateId}`);
+  return {
+    id: uid(),
+    templateId,
+    startedAt: now,
+    restEnd: 0,
+    restTotal: 0,
+    restFrom: '',
+    editing: null,
+    applyNext: true,
+    blocks: t.blocks.map((b) => ({
+      label: b.label,
+      rest: b.rest,
+      exercises: b.items.map((it) => {
+        const ex = exerciseById(data, it.exerciseId);
+        const w = ex.kind === 'timed' || ex.kind === 'bodyweight' ? null : progressOf(data, it.exerciseId).weight;
+        return {
+          exerciseId: it.exerciseId,
+          repsMin: it.repsMin,
+          repsMax: it.repsMax,
+          sets: Array.from({ length: it.sets }, () => ({ w, reps: it.repsMax, done: false }))
+        };
+      })
+    }))
+  };
+}
+
+/** Dernière performance enregistrée pour un exercice. */
+export function lastLog(data: AppData, exerciseId: string): { log: ExerciseLog; at: number } | null {
+  for (let i = data.history.length - 1; i >= 0; i--) {
+    const rec = data.history[i];
+    for (const b of rec.blocks) {
+      const log = b.exercises.find((e) => e.exerciseId === exerciseId);
+      if (log) return { log, at: rec.endedAt };
+    }
+  }
+  return null;
+}
+
+export function computeDecisions(data: AppData, session: ActiveSession) {
+  return session.blocks.flatMap((b) =>
+    b.exercises.map((log) => decide(exerciseById(data, log.exerciseId), log, progressOf(data, log.exerciseId)))
+  );
+}
+
+/** Enregistre la séance terminée et applique les nouvelles charges. */
+export function commitSession(data: AppData): SessionRecord | null {
+  const s = data.active;
+  if (!s || !s.decisions) return null;
+  const t = templateById(data, s.templateId);
+  const record: SessionRecord = {
+    id: s.id,
+    templateId: s.templateId,
+    templateName: t?.name ?? s.templateId,
+    startedAt: s.startedAt,
+    endedAt: s.finishedAt ?? Date.now(),
+    feeling: s.feeling ?? null,
+    blocks: s.blocks,
+    decisions: s.decisions
+  };
+  for (const d of s.decisions) {
+    const prev = progressOf(data, d.exerciseId);
+    data.progress[d.exerciseId] = {
+      weight: d.to ?? prev.weight,
+      failStreak: d.failStreak,
+      lastChange: d.to !== null && d.from !== null ? Math.round((d.to - d.from) * 100) / 100 : 0
+    };
+  }
+  data.history.push(record);
+  data.active = null;
+  return record;
+}
+
+/* ---------- Export / import ---------- */
+
+export function exportAll(data: AppData): string {
+  return JSON.stringify({ ...data, active: null, exportedAt: new Date().toISOString() }, null, 2);
+}
+
+export function exportTemplate(data: AppData, templateId: string): string {
+  const t = templateById(data, templateId);
+  if (!t) throw new Error('Séance introuvable');
+  const ids = new Set(t.blocks.flatMap((b) => b.items.map((i) => i.exerciseId)));
+  return JSON.stringify(
+    { type: 'dannythedog-template', version: 1, template: t, exercises: data.exercises.filter((e) => ids.has(e.id)) },
+    null,
+    2
+  );
+}
+
+export type ImportResult = { kind: 'backup'; backup: AppData } | { kind: 'template'; template: Template; exercises: Exercise[] };
+
+export function parseImport(text: string): ImportResult {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("Ce fichier n'est pas un JSON valide.");
+  }
+  const p = parsed as { type?: string; template?: Template; exercises?: Exercise[] };
+  if (p && p.type === 'dannythedog-template' && p.template && Array.isArray(p.template.blocks)) {
+    return { kind: 'template', template: p.template, exercises: Array.isArray(p.exercises) ? p.exercises : [] };
+  }
+  if (isAppData(parsed)) return { kind: 'backup', backup: parsed };
+  throw new Error("Ce fichier n'est pas une sauvegarde Danny the DOG.");
+}
+
+export function mergeBackup(data: AppData, backup: AppData): AppData {
+  const merged: AppData = { ...data };
+  merged.exercises = [...data.exercises, ...backup.exercises.filter((e) => !data.exercises.some((x) => x.id === e.id))];
+  merged.templates = [...data.templates, ...backup.templates.filter((t) => !data.templates.some((x) => x.id === t.id))];
+  const known = new Set(data.history.map((h) => h.id));
+  merged.history = [...data.history, ...backup.history.filter((h) => !known.has(h.id))].sort((a, b) => a.endedAt - b.endedAt);
+  merged.progress = { ...backup.progress, ...data.progress };
+  return merged;
+}
+
+export function addTemplate(data: AppData, template: Template, exercises: Exercise[]): Template {
+  for (const ex of exercises) {
+    if (!data.exercises.some((e) => e.id === ex.id)) {
+      data.exercises.push(ex);
+      data.progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
+    }
+  }
+  let id = template.id;
+  let n = 2;
+  while (data.templates.some((t) => t.id === id)) id = `${template.id}${n++}`;
+  const copy = { ...template, id, name: id === template.id ? template.name : `${template.name} (${n - 1})` };
+  data.templates.push(copy);
+  return copy;
+}
