@@ -23,6 +23,14 @@ Sur Android, ouvre le lien dans Chrome puis « Ajouter à l'écran d'accueil » 
 - **Progrès** : courbe de la charge de travail par exercice (tap sur un point pour le détail), départ, record, tableau de toutes les charges.
 - **Corps** : saisie du poids et du tour de taille (une mesure par jour), courbes et dernières mesures.
 
+## Éditeur de séances (V3)
+
+- **Mes séances** (lien « Gérer mes séances » sur l'accueil) : modifier, dupliquer, supprimer, créer.
+- **Modifier une séance** : lettre, nom, jour prévu, séance optionnelle ; pour chaque exercice séries, reps min/max (ou durée), repos ; réordonner (↑ ↓), lier/dissocier les supersets, changer ou retirer un exercice.
+- **Réglages d'exercice** (⚙) : type (lourd, isolation, temps, poids du corps), pas de charge, charge actuelle — valables dans toutes les séances.
+- **Catalogue** : recherche, filtre par type, création d'un exercice.
+- Rien n'est modifié avant « Enregistrer » ; une séance en cours n'est pas affectée.
+
 ## Données de base
 
 - `src/data/exercises.json` : catalogue d'exercices (`kind` : `heavy`, `isolation`, `timed`, `bodyweight` ; `step` : pas de charge ; `startWeight` : charge de départ).

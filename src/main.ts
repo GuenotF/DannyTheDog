@@ -14,6 +14,13 @@ import { renderData, type DataUi } from './ui/data';
 import { renderHistory, type HistoryUi } from './ui/history';
 import { renderProgress, type ProgressUi } from './ui/progress';
 import { bodyDefaults, renderBody, type BodyUi } from './ui/body';
+import { renderTemplates } from './ui/templates';
+import { renderEditor, renderPickerList, type EditorUi } from './ui/editorView';
+import {
+  addItem, commitDraft, createExercise, defaultItem, deleteTemplate, draftExercise, linkWithPrevious,
+  moveItem, newDraft, removeItem, replaceItem, unlink, validateDraft
+} from './editor';
+import type { ExerciseKind } from './types';
 
 registerSW({ immediate: true });
 
@@ -29,6 +36,53 @@ function resetBodyDraft() {
   body.draftWaist = d.waist;
 }
 resetBodyDraft();
+const editor: EditorUi = { draft: null, open: null, picker: null, confirmDelete: false };
+let tplConfirmDelete: string | null = null;
+
+function openEditor(draft: ReturnType<typeof newDraft>) {
+  editor.draft = draft;
+  editor.open = null;
+  editor.picker = null;
+  editor.confirmDelete = false;
+  go('edition');
+}
+
+function edKey(key: string) {
+  const [bi, xi] = key.split('-').map(Number);
+  const t = editor.draft!.template;
+  return { bi, xi, t, block: t.blocks[bi], item: t.blocks[bi].items[xi] };
+}
+
+/** Crée (si besoin) la surcharge de réglages de l'exercice dans le brouillon. */
+function exDraftOf(id: string) {
+  const d = editor.draft!;
+  if (!d.exercises[id]) {
+    const ex = draftExercise(data, d, id);
+    d.exercises[id] = { kind: ex.kind, step: ex.step, weight: ex.weight };
+  }
+  return d.exercises[id];
+}
+
+function pickerDefaults(mode: 'add' | 'replace', bi?: number, xi?: number) {
+  editor.picker = { mode, bi, xi, query: '', filter: 'all', create: false, name: '', kind: 'isolation', step: 2.5, start: 20 };
+}
+
+function chooseExercise(id: string) {
+  const d = editor.draft!;
+  const p = editor.picker!;
+  const ex = draftExercise(data, d, id);
+  if (p.mode === 'replace' && p.bi !== undefined && p.xi !== undefined) {
+    const old = d.template.blocks[p.bi].items[p.xi];
+    replaceItem(d.template, p.bi, p.xi, { ...defaultItem(ex), sets: old.sets });
+    editor.picker = null;
+    render();
+  } else {
+    addItem(d.template, defaultItem(ex), ex.kind === 'heavy' ? 150 : 90);
+    editor.picker = null;
+    render();
+    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+  }
+}
 const app = document.getElementById('app')!;
 
 requestPersistence().then((p) => {
@@ -38,8 +92,8 @@ requestPersistence().then((p) => {
 
 /* ---------- Navigation ---------- */
 
-type Route = 'home' | 'seance' | 'fin' | 'donnees' | 'historique' | 'progres' | 'corps';
-const ROUTES: Route[] = ['seance', 'fin', 'donnees', 'historique', 'progres', 'corps'];
+type Route = 'home' | 'seance' | 'fin' | 'donnees' | 'historique' | 'progres' | 'corps' | 'seances' | 'edition';
+const ROUTES: Route[] = ['seance', 'fin', 'donnees', 'historique', 'progres', 'corps', 'seances', 'edition'];
 
 function route(): Route {
   const h = location.hash.replace(/^#\/?/, '') as Route;
@@ -72,6 +126,7 @@ function render() {
   const s = data.active;
   if (r === 'seance' && (!s || s.finishedAt)) r = s?.finishedAt ? 'fin' : 'home';
   if (r === 'fin' && (!s || !s.finishedAt)) r = s ? 'seance' : 'home';
+  if (r === 'edition' && !editor.draft) r = 'seances';
   if (r !== route()) {
     location.replace(r === 'home' ? '#/' : `#/${r}`);
   }
@@ -82,6 +137,8 @@ function render() {
   else if (r === 'historique') html = renderHistory(data, hist);
   else if (r === 'progres') html = renderProgress(data, prog);
   else if (r === 'corps') html = renderBody(data, body);
+  else if (r === 'seances') html = renderTemplates(data, tplConfirmDelete);
+  else if (r === 'edition') html = renderEditor(data, editor);
   else html = renderHome(data);
   if (ui.toast) html += `<div class="toast" role="status">${ui.toast}</div>`;
   app.innerHTML = html;
@@ -324,6 +381,170 @@ const actions: Record<string, (el: HTMLElement) => void> = {
     toast('Mesure supprimée');
   },
 
+  /* ---------- Mes séances ---------- */
+  'tpl-edit'(el) {
+    const t = data.templates.find((x) => x.id === el.dataset.id);
+    if (t) openEditor(newDraft(data, t));
+  },
+  'tpl-duplicate'(el) {
+    const t = data.templates.find((x) => x.id === el.dataset.id);
+    if (t) openEditor(newDraft(data, t, true));
+  },
+  'tpl-new'() {
+    openEditor(newDraft(data));
+  },
+  'tpl-delete-ask'(el) {
+    tplConfirmDelete = el.dataset.id!;
+    render();
+  },
+  'tpl-delete-cancel'() {
+    tplConfirmDelete = null;
+    render();
+  },
+  'tpl-delete'(el) {
+    deleteTemplate(data, el.dataset.id!);
+    tplConfirmDelete = null;
+    editor.draft = null;
+    persist();
+    go('seances');
+    toast('Séance supprimée');
+  },
+
+  /* ---------- Éditeur ---------- */
+  'ed-cancel'() {
+    editor.draft = null;
+    go('seances');
+  },
+  'ed-save'() {
+    const d = editor.draft!;
+    const err = validateDraft(data, d);
+    if (err) return toast(err);
+    commitDraft(data, d);
+    editor.draft = null;
+    persist();
+    go('seances');
+    toast('Séance enregistrée');
+  },
+  'ed-day'(el) {
+    const t = editor.draft!.template;
+    const day = Number(el.dataset.day);
+    t.day = t.day === day ? 0 : day;
+    render();
+  },
+  'ed-field'(el) {
+    const dir = Number(el.dataset.dir);
+    const field = el.dataset.field!;
+    if (field === 'new-step' || field === 'new-start') {
+      const p = editor.picker!;
+      if (field === 'new-step') p.step = Math.max(0.5, p.step + 0.5 * dir);
+      else p.start = Math.max(0, roundToStep(p.start + p.step * dir, p.step));
+      return render();
+    }
+    const { block, item } = edKey(el.dataset.key!);
+    const ex = draftExercise(data, editor.draft!, item.exerciseId);
+    const d = ex.kind === 'timed' ? 5 : 1;
+    if (field === 'sets') item.sets = Math.max(1, item.sets + dir);
+    else if (field === 'rest') block.rest = Math.max(0, block.rest + 15 * dir);
+    else if (field === 'min') {
+      item.repsMin = Math.max(1, item.repsMin + d * dir);
+      if (item.repsMax < item.repsMin) item.repsMax = item.repsMin;
+    } else if (field === 'max') item.repsMax = Math.max(item.repsMin, item.repsMax + d * dir);
+    else if (field === 'step') {
+      const o = exDraftOf(item.exerciseId);
+      o.step = Math.max(0.5, o.step + 0.5 * dir);
+    } else if (field === 'weight') {
+      const o = exDraftOf(item.exerciseId);
+      o.weight = Math.max(0, roundToStep((o.weight ?? 0) + o.step * dir, o.step));
+    }
+    render();
+  },
+  'ed-kind'(el) {
+    const { item } = edKey(el.dataset.key!);
+    exDraftOf(item.exerciseId).kind = el.dataset.kind as ExerciseKind;
+    render();
+  },
+  'ed-settings'(el) {
+    editor.open = editor.open === el.dataset.key ? null : el.dataset.key!;
+    render();
+  },
+  'ed-up'(el) {
+    const { t, bi, xi } = edKey(el.dataset.key!);
+    moveItem(t, bi, xi, -1);
+    editor.open = null;
+    render();
+  },
+  'ed-down'(el) {
+    const { t, bi, xi } = edKey(el.dataset.key!);
+    moveItem(t, bi, xi, 1);
+    editor.open = null;
+    render();
+  },
+  'ed-remove'(el) {
+    const { t, bi, xi } = edKey(el.dataset.key!);
+    removeItem(t, bi, xi);
+    editor.open = null;
+    render();
+  },
+  'ed-link'(el) {
+    linkWithPrevious(editor.draft!.template, Number(el.dataset.bi));
+    editor.open = null;
+    render();
+  },
+  'ed-unlink'(el) {
+    unlink(editor.draft!.template, Number(el.dataset.bi));
+    editor.open = null;
+    render();
+  },
+  'ed-add'() {
+    pickerDefaults('add');
+    render();
+  },
+  'ed-replace'(el) {
+    const { bi, xi } = edKey(el.dataset.key!);
+    pickerDefaults('replace', bi, xi);
+    render();
+  },
+  'ed-delete-ask'() {
+    editor.confirmDelete = true;
+    render();
+  },
+  'ed-delete-cancel'() {
+    editor.confirmDelete = false;
+    render();
+  },
+  'pick-close'() {
+    editor.picker = null;
+    render();
+  },
+  'pick-filter'(el) {
+    editor.picker!.filter = el.dataset.kind as ExerciseKind | 'all';
+    render();
+  },
+  'pick-choose'(el) {
+    chooseExercise(el.dataset.id!);
+  },
+  'pick-create'() {
+    const p = editor.picker!;
+    p.create = true;
+    p.name = p.query.trim();
+    render();
+  },
+  'pick-create-back'() {
+    editor.picker!.create = false;
+    render();
+  },
+  'pick-kind'(el) {
+    editor.picker!.kind = el.dataset.kind as ExerciseKind;
+    render();
+  },
+  'pick-create-save'() {
+    const p = editor.picker!;
+    if (!p.name.trim()) return toast("Donne un nom à l'exercice");
+    const ex = createExercise(data, editor.draft!, p.name, p.kind, p.step, p.start);
+    chooseExercise(ex.id);
+    toast(`« ${ex.name} » ajouté au catalogue`);
+  },
+
   /* ---------- Données ---------- */
   'export-all'() {
     download(`dannythedog-${today()}.json`, exportAll(data));
@@ -413,6 +634,20 @@ app.addEventListener('change', async (ev) => {
     const val = Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null;
     if (el.dataset.key === 'weight') body.draftWeight = val;
     else body.draftWaist = val;
+  } else if (kind === 'ed-id' && editor.draft) {
+    editor.draft.template.id = el.value.trim().toUpperCase();
+    el.value = editor.draft.template.id;
+  } else if (kind === 'ed-name' && editor.draft) {
+    editor.draft.template.name = el.value;
+  } else if (kind === 'ed-optional' && editor.draft) {
+    editor.draft.template.optional = el.checked;
+  } else if (kind === 'ed-weight' && editor.draft) {
+    const { item } = edKey(el.dataset.key!);
+    const v = parseFloat(el.value.replace(',', '.'));
+    exDraftOf(item.exerciseId).weight = Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
+    render();
+  } else if (kind === 'pick-name' && editor.picker) {
+    editor.picker.name = el.value;
   } else if (kind === 'apply-next') {
     data.active!.applyNext = el.checked;
     persist();
@@ -432,6 +667,17 @@ app.addEventListener('change', async (ev) => {
     } catch (err) {
       toast((err as Error).message);
     }
+  }
+});
+
+app.addEventListener('input', (ev) => {
+  const el = ev.target as HTMLInputElement;
+  if (el.dataset.input === 'pick-query' && editor.picker) {
+    editor.picker.query = el.value;
+    const list = document.getElementById('pick-list');
+    if (list) list.innerHTML = renderPickerList(data, editor);
+    const suffix = document.getElementById('pick-create-suffix');
+    if (suffix) suffix.textContent = el.value.trim() ? ` « ${el.value.trim()} »` : '';
   }
 });
 

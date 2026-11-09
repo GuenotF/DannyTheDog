@@ -83,7 +83,7 @@ export function renderHome(data: AppData, now = new Date()): string {
       main = `
         <section class="card section" aria-label="Prochaine séance" style="gap:16px">
           <div class="section" style="gap:4px">
-            <span class="eyebrow">Prochaine séance · ${DAY_NAMES[next.day - 1] ?? ''}</span>
+            <span class="eyebrow">Prochaine séance${DAY_NAMES[next.day - 1] ? ' · ' + DAY_NAMES[next.day - 1] : ''}</span>
             <h1 class="title" style="font-size:28px">${e(next.name)}</h1>
             <span class="muted small">${items.length} exercices${supersets ? ` · ${supersets} superset${supersets > 1 ? 's' : ''}` : ''}</span>
           </div>
@@ -99,7 +99,7 @@ export function renderHome(data: AppData, now = new Date()): string {
   const nextId = active ? active.templateId : nextTemplate(data)?.id;
   const others = data.templates.filter((t) => t.id !== nextId).map((t) => {
     const last = [...data.history].reverse().find((h) => h.templateId === t.id);
-    const sub = `${DAY_NAMES[t.day - 1] ?? ''}${t.optional ? ' · optionnelle' : ''} · ${last ? 'dernière : ' + formatDate(last.endedAt) : 'jamais faite'}`;
+    const sub = [DAY_NAMES[t.day - 1], t.optional ? 'optionnelle' : '', last ? 'dernière : ' + formatDate(last.endedAt) : 'jamais faite'].filter(Boolean).join(' · ');
     return `<button type="button" class="tpl-link${t.optional ? ' optional' : ''}" data-action="start" data-id="${e(t.id)}">
       <span class="section" style="gap:2px"><span style="font-size:15px;font-weight:600">${e(t.name)}</span><span class="muted small">${e(sub.charAt(0).toUpperCase() + sub.slice(1))}</span></span>
       <span class="muted">${icons.chevron}</span></button>`;
@@ -122,6 +122,9 @@ export function renderHome(data: AppData, now = new Date()): string {
     </section>
     ${main}
     ${others ? `<section class="section" aria-label="Autres séances"><h2 style="font-size:15px;font-weight:600">${active ? 'Séances' : 'Autres séances'}</h2>${others}</section>` : ''}
+    <a class="btn" href="#/seances" style="align-self:flex-start">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>
+      Gérer mes séances</a>
     ${banner}
   </div>
   ${renderNav('home')}`;
