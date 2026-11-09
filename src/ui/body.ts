@@ -56,7 +56,7 @@ export function renderBody(data: AppData, ui: BodyUi): string {
       <label class="muted xsmall" for="m-${key}">${label}</label>
       <div class="row between" style="gap:4px">
         <button type="button" class="step-btn" style="background:var(--surface)" data-action="body-step" data-key="${key}" data-dir="-1" aria-label="${label} : moins ${step}">−</button>
-        <span class="row" style="gap:2px;align-items:baseline"><input id="m-${key}" class="measure-input" type="number" inputmode="decimal" step="any" min="0" value="${value ?? ''}" placeholder="—" data-change="body-input" data-key="${key}"><span class="muted small">${u}</span></span>
+        <span class="row" style="gap:2px;align-items:baseline"><input id="m-${key}" class="measure-input" type="text" inputmode="decimal" autocomplete="off" value="${value === null ? '' : formatNumber(value)}" placeholder="—" data-change="body-input" data-key="${key}"><span class="muted small">${u}</span></span>
         <button type="button" class="step-btn" style="background:var(--surface)" data-action="body-step" data-key="${key}" data-dir="1" aria-label="${label} : plus ${step}">+</button>
       </div>
     </div>`;

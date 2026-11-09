@@ -1,8 +1,9 @@
-name: Deploy to GitHub Pages
+name: Tests et déploiement
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -11,11 +12,12 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  test:
+    name: Tests (unitaires + interface)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +26,34 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Tests unitaires
+        run: npm test
+      - name: Installer Chromium pour Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Tests d'interface (mobile)
+        run: npm run test:e2e
+        env:
+          CI: true
+      - name: Rapport des tests en échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
+
+  build:
+    name: Build
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
@@ -32,6 +61,7 @@ jobs:
           path: dist
 
   deploy:
+    name: Déploiement GitHub Pages
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -41,8 +41,20 @@ Sur Android, ouvre le lien dans Chrome puis « Ajouter à l'écran d'accueil » 
 ```bash
 npm install
 npm run dev      # serveur local
-npm test         # tests de la logique de progression
+npm test         # tests unitaires (progression, statistiques, éditeur)
+npm run test:e2e # tests d'interface sur un mobile simulé (Playwright)
 npm run build    # build dans dist/
 ```
 
-Chaque push sur `main` lance les tests, le build et le déploiement sur GitHub Pages.
+Pour les tests d'interface, installe une fois le navigateur : `npx playwright install chromium`.
+
+Chaque push sur `main` lance les tests unitaires puis les tests d'interface ; le déploiement sur GitHub Pages n'a lieu que si tout passe. Les pull requests sont testées sans être déployées.
+
+### Tests d'interface (`e2e/`)
+
+- `session.spec.ts` : accueil, séance en cours (charges, reps, minuteur, supersets, rechargement, annulation), fin de séance et règles de progression.
+- `tracking.spec.ts` : historique (filtre, détail, suppression), progrès (courbe, infobulle), corps (mesures).
+- `editor.spec.ts` : éditeur de séances et catalogue d'exercices.
+- `data.spec.ts` : export / import, partage de modèle, fichiers invalides, effacement, compatibilité V1.
+
+Chaque test démarre avec un navigateur vierge et échoue si l'appli lève une erreur JavaScript.

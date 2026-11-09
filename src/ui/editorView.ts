@@ -87,7 +87,7 @@ export function renderEditor(data: AppData, ui: EditorUi): string {
               <label class="tile-label" for="w-${key}">Charge actuelle</label>
               <div class="row between" style="gap:2px">
                 <button type="button" class="tile-btn" data-action="ed-field" data-key="${key}" data-field="weight" data-dir="-1" aria-label="Charge : moins">−</button>
-                <span class="row" style="gap:2px;align-items:baseline"><input id="w-${key}" class="tile-input" type="number" inputmode="decimal" step="any" min="0" value="${ex.weight ?? ''}" placeholder="—" data-change="ed-weight" data-key="${key}"><span class="muted xsmall">kg</span></span>
+                <span class="row" style="gap:2px;align-items:baseline"><input id="w-${key}" class="tile-input" type="text" inputmode="decimal" autocomplete="off" value="${ex.weight === null ? '' : formatNumber(ex.weight)}" placeholder="—" data-change="ed-weight" data-key="${key}"><span class="muted xsmall">kg</span></span>
                 <button type="button" class="tile-btn" data-action="ed-field" data-key="${key}" data-field="weight" data-dir="1" aria-label="Charge : plus">+</button>
               </div>
             </div>`}

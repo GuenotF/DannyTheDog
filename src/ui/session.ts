@@ -66,7 +66,7 @@ function renderBlock(data: AppData, s: ActiveSession, b: BlockLog, bi: number): 
           <div class="row between" style="gap:8px">
             <button type="button" class="btn" data-action="weight-step" data-key="${key}" data-dir="-1">−${formatNumber(ex.step)}</button>
             <label class="visually-hidden" for="w-${key}">Charge en kg</label>
-            <input id="w-${key}" class="weight-input" type="number" inputmode="decimal" step="any" min="0" value="${set.w ?? ''}" placeholder="kg" data-change="weight-input" data-key="${key}">
+            <input id="w-${key}" class="weight-input" type="text" inputmode="decimal" autocomplete="off" value="${set.w === null ? '' : formatNumber(set.w)}" placeholder="kg" data-change="weight-input" data-key="${key}">
             <button type="button" class="btn" data-action="weight-step" data-key="${key}" data-dir="1">+${formatNumber(ex.step)}</button>
           </div>
           <label class="check-label"><input type="checkbox" data-change="apply-next" ${s.applyNext ? 'checked' : ''}> Appliquer aux séries suivantes</label>

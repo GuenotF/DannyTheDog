@@ -25,6 +25,7 @@ import type { ExerciseKind } from './types';
 registerSW({ immediate: true });
 
 let data: AppData = load();
+save(data);
 const ui: DataUi & { toast: string | null; confirmCancel: boolean } = { persisted: null, pendingImport: null, confirmClear: false, toast: null, confirmCancel: false };
 let pendingBackup: AppData | null = null;
 const hist: HistoryUi = { filter: 'Toutes', open: null, confirmDelete: null };
@@ -596,6 +597,14 @@ function finishImport(msg: string) {
   toast(msg);
 }
 
+/** « 32,5 » ou « 32.5 » → 32.5 ; vide → null ; saisie invalide → undefined (on garde l'ancienne valeur). */
+function parseDecimal(raw: string): number | null | undefined {
+  const t = raw.trim().replace(',', '.');
+  if (t === '') return null;
+  const v = Number(t);
+  return Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : undefined;
+}
+
 const today = () => new Date().toISOString().slice(0, 10);
 const slug = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
@@ -625,15 +634,20 @@ app.addEventListener('change', async (ev) => {
   const el = ev.target as HTMLInputElement;
   const kind = el.dataset.change;
   if (kind === 'weight-input') {
-    const v = parseFloat(el.value.replace(',', '.'));
-    setWeight(el.dataset.key!, Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null);
-    persist();
+    const v = parseDecimal(el.value);
+    if (v !== undefined) {
+      setWeight(el.dataset.key!, v);
+      persist();
+    }
     render();
   } else if (kind === 'body-input') {
-    const v = parseFloat(el.value.replace(',', '.'));
-    const val = Number.isFinite(v) && v > 0 ? Math.round(v * 10) / 10 : null;
-    if (el.dataset.key === 'weight') body.draftWeight = val;
-    else body.draftWaist = val;
+    const v = parseDecimal(el.value);
+    if (v !== undefined) {
+      const val = v === null || v === 0 ? null : Math.round(v * 10) / 10;
+      if (el.dataset.key === 'weight') body.draftWeight = val;
+      else body.draftWaist = val;
+    }
+    render();
   } else if (kind === 'ed-id' && editor.draft) {
     editor.draft.template.id = el.value.trim().toUpperCase();
     el.value = editor.draft.template.id;
@@ -643,8 +657,8 @@ app.addEventListener('change', async (ev) => {
     editor.draft.template.optional = el.checked;
   } else if (kind === 'ed-weight' && editor.draft) {
     const { item } = edKey(el.dataset.key!);
-    const v = parseFloat(el.value.replace(',', '.'));
-    exDraftOf(item.exerciseId).weight = Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
+    const v = parseDecimal(el.value);
+    if (v !== undefined) exDraftOf(item.exerciseId).weight = v;
     render();
   } else if (kind === 'pick-name' && editor.picker) {
     editor.picker.name = el.value;
