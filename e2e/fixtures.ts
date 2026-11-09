@@ -40,12 +40,17 @@ export async function startSession(page: Page, id?: string) {
   const btn = id ? page.locator(`button[data-action=start][data-id="${id}"]`).first() : page.locator('section[aria-label="Prochaine séance"] button[data-action=start]');
   await btn.click();
   await expect(page).toHaveURL(/#\/seance$/);
+  // L'écran est rendu après l'événement hashchange : on attend qu'il soit là.
+  await expect(page.locator('button[data-action=toggle-set]').first()).toBeVisible();
 }
 
 /** Valide toutes les séries de la séance en cours. */
 export async function completeAllSets(page: Page) {
+  const all = page.locator('button[data-action=toggle-set]');
+  await expect(all.first()).toBeVisible();
   const open = page.locator('button[data-action=toggle-set][aria-pressed=false]');
   while ((await open.count()) > 0) await open.first().click();
+  await expect(open).toHaveCount(0);
 }
 
 export async function finishAndSave(page: Page, feeling = 7) {
