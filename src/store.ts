@@ -192,16 +192,88 @@ export function parseImport(text: string): ImportResult {
   throw new Error("Ce fichier n'est pas une sauvegarde Danny the DOG.");
 }
 
-export function mergeBackup(data: AppData, backup: AppData): AppData {
+export interface MergeReport {
+  sessions: number;
+  body: number;
+  templatesAdded: number;
+  templatesUpdated: number;
+  exercisesAdded: number;
+  weightsUpdated: number;
+  /** Côté retenu pour les modèles, exercices et charges présents des deux côtés. */
+  winner: 'fichier' | 'téléphone';
+}
+
+/** Date de la dernière activité enregistrée (séance ou mesure). */
+export function lastActivity(d: AppData): number {
+  return Math.max(0, ...d.history.map((h) => h.endedAt), ...(d.body ?? []).map((b) => b.at));
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Fusionne une sauvegarde : séances et mesures des deux côtés ; pour les modèles,
+ * exercices et charges présents des deux côtés, la version la plus récente l'emporte
+ * (celle du fichier si le téléphone n'a pas d'activité plus récente).
+ */
+export function mergeBackup(data: AppData, backup: AppData): { merged: AppData; report: MergeReport } {
+  const fileWins = lastActivity(backup) >= lastActivity(data);
+  const report: MergeReport = { sessions: 0, body: 0, templatesAdded: 0, templatesUpdated: 0, exercisesAdded: 0, weightsUpdated: 0, winner: fileWins ? 'fichier' : 'téléphone' };
+
+  const unionById = <T extends { id: string }>(local: T[], incoming: T[], onAdd: () => void, onUpdate?: () => void): T[] => {
+    const out = local.map((l) => {
+      const other = incoming.find((x) => x.id === l.id);
+      if (other && fileWins && !same(other, l)) {
+        onUpdate?.();
+        return structuredClone(other);
+      }
+      return l;
+    });
+    for (const x of incoming) if (!local.some((l) => l.id === x.id)) {
+      out.push(structuredClone(x));
+      onAdd();
+    }
+    return out;
+  };
+
   const merged: AppData = { ...data };
-  merged.exercises = [...data.exercises, ...backup.exercises.filter((e) => !data.exercises.some((x) => x.id === e.id))];
-  merged.templates = [...data.templates, ...backup.templates.filter((t) => !data.templates.some((x) => x.id === t.id))];
+  merged.exercises = unionById(data.exercises, backup.exercises, () => report.exercisesAdded++);
+  merged.templates = unionById(data.templates, backup.templates, () => report.templatesAdded++, () => report.templatesUpdated++);
+
+  merged.progress = { ...data.progress };
+  for (const [id, p] of Object.entries(backup.progress)) {
+    const local = data.progress[id];
+    if (!local || (fileWins && !same(local, p))) {
+      if (local && local.weight !== p.weight) report.weightsUpdated++;
+      merged.progress[id] = { ...p };
+    }
+  }
+
   const known = new Set(data.history.map((h) => h.id));
-  merged.history = [...data.history, ...backup.history.filter((h) => !known.has(h.id))].sort((a, b) => a.endedAt - b.endedAt);
-  merged.progress = { ...backup.progress, ...data.progress };
+  const newSessions = backup.history.filter((h) => !known.has(h.id));
+  report.sessions = newSessions.length;
+  merged.history = [...data.history, ...newSessions].sort((a, b) => a.endedAt - b.endedAt);
+
   const bodyIds = new Set((data.body ?? []).map((b) => b.id));
-  merged.body = [...(data.body ?? []), ...(backup.body ?? []).filter((b) => !bodyIds.has(b.id))].sort((a, b) => a.at - b.at);
-  return merged;
+  const newBody = (backup.body ?? []).filter((b) => !bodyIds.has(b.id));
+  report.body = newBody.length;
+  merged.body = [...(data.body ?? []), ...newBody].sort((a, b) => a.at - b.at);
+
+  if (data.lastExport === null) merged.lastExport = backup.lastExport ?? null;
+  return { merged, report };
+}
+
+/** Phrase de bilan affichée après une fusion. */
+export function describeMerge(r: MergeReport): string {
+  const parts: string[] = [];
+  const n = (k: number, one: string, many: string) => `${k} ${k > 1 ? many : one}`;
+  if (r.sessions) parts.push(n(r.sessions, 'séance', 'séances'));
+  if (r.body) parts.push(n(r.body, 'mesure', 'mesures'));
+  if (r.templatesAdded) parts.push(n(r.templatesAdded, 'modèle ajouté', 'modèles ajoutés'));
+  if (r.templatesUpdated) parts.push(n(r.templatesUpdated, 'modèle mis à jour', 'modèles mis à jour'));
+  if (r.exercisesAdded) parts.push(n(r.exercisesAdded, 'exercice ajouté', 'exercices ajoutés'));
+  if (r.weightsUpdated) parts.push(n(r.weightsUpdated, 'charge mise à jour', 'charges mises à jour'));
+  if (parts.length === 0) return 'Rien de nouveau : ce fichier contient les mêmes données que ce téléphone.';
+  return `Importé : ${parts.join(', ')}.`;
 }
 
 export function addTemplate(data: AppData, template: Template, exercises: Exercise[]): Template {

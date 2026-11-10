@@ -15,11 +15,11 @@ test.describe('Données : export et import', () => {
     expect(exported.active).toBeNull();
     expect((await readData(app)).lastExport).not.toBeNull();
 
-    // Fusion : rien n'est dupliqué
+    // Fusion du même contenu : rien n'est dupliqué, et l'appli le dit
     await app.locator('input[data-change=import-file]').setInputFiles(path);
     await expect(app.getByRole('dialog', { name: 'Importer une sauvegarde' })).toContainText('1 séance(s)');
     await app.locator('button[data-action=import-merge]').click();
-    await expect(toast(app)).toHaveText('Données ajoutées');
+    await expect(toast(app)).toContainText('Rien de nouveau');
     expect((await readData(app)).history).toHaveLength(1);
 
     // Remplacement après une séance supplémentaire : on revient à l'état exporté
@@ -29,8 +29,37 @@ test.describe('Données : export et import', () => {
     await app.getByRole('link', { name: 'Données et sauvegarde' }).click();
     await app.locator('input[data-change=import-file]').setInputFiles(path);
     await app.locator('button[data-action=import-replace]').click();
-    await expect(toast(app)).toHaveText('Données remplacées');
+    await expect(toast(app)).toContainText('Données remplacées : 1 séance(s)');
     expect((await readData(app)).history).toHaveLength(1);
+  });
+
+  test('import dans un téléphone vierge : les séances modifiées et les charges sont reprises', async ({ app, browser }) => {
+    // Téléphone 1 : séance A renommée + une séance faite
+    await app.getByRole('link', { name: 'Gérer mes séances' }).click();
+    await app.locator('button[data-action=tpl-edit][data-id=A]').click();
+    await app.locator('input[data-change=ed-name]').fill('Séance A — Jambes');
+    await app.locator('input[data-change=ed-name]').blur();
+    await app.locator('button[data-action=ed-save]').click();
+    await app.goto('./#/');
+    await doFullSession(app, 'A');
+    await app.getByRole('link', { name: 'Données et sauvegarde' }).click();
+    const download = app.waitForEvent('download');
+    await app.locator('button[data-action=export-all]').click();
+    const path = await (await download).path();
+
+    // Téléphone 2 : tout neuf, on fusionne
+    const ctx = await browser.newContext({ ...test.info().project.use, serviceWorkers: 'block' });
+    const phone2 = await ctx.newPage();
+    await phone2.goto('./#/donnees');
+    await phone2.locator('input[data-change=import-file]').setInputFiles(path);
+    await phone2.locator('button[data-action=import-merge]').click();
+    await expect(phone2.locator('.toast')).toContainText('1 séance');
+    await expect(phone2.locator('.toast')).toContainText('1 modèle mis à jour');
+    const data = await readData(phone2);
+    expect(data.templates[0].name).toBe('Séance A — Jambes');
+    expect(data.progress.squat.weight).toBe(32.5);
+    expect(data.history).toHaveLength(1);
+    await ctx.close();
   });
 
   test('partage d’un modèle de séance', async ({ app }) => {

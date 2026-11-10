@@ -2,7 +2,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import type { AppData } from './types';
 import {
-  addBodyEntry, addTemplate, commitSession, deleteBodyEntry, deleteSession, computeDecisions, exerciseById, exportAll, exportTemplate,
+  addBodyEntry, addTemplate, commitSession, describeMerge, deleteBodyEntry, deleteSession, computeDecisions, exerciseById, exportAll, exportTemplate,
   load, mergeBackup, parseImport, requestPersistence, save, seed, startSession
 } from './store';
 import { kindFor, roundToStep } from './progression';
@@ -125,7 +125,7 @@ function toast(msg: string) {
   toastTimer = window.setTimeout(() => {
     ui.toast = null;
     document.querySelector('.toast')?.remove();
-  }, 2800);
+  }, msg.length > 40 ? 5000 : 2800);
   render();
 }
 
@@ -611,14 +611,17 @@ const actions: Record<string, (el: HTMLElement) => void> = {
   },
   'import-merge'() {
     if (!pendingBackup) return;
-    data = mergeBackup(data, pendingBackup);
-    finishImport('Données ajoutées');
+    const { merged, report } = mergeBackup(data, pendingBackup);
+    data = merged;
+    resetBodyDraft();
+    finishImport(describeMerge(report));
   },
   'import-replace'() {
     if (!pendingBackup) return;
-    data = { ...pendingBackup, body: pendingBackup.body ?? [], active: null };
+    const b = pendingBackup;
+    data = { ...b, body: b.body ?? [], active: null };
     resetBodyDraft();
-    finishImport('Données remplacées');
+    finishImport(`Données remplacées : ${b.history.length} séance(s), ${b.templates.length} modèle(s), ${(b.body ?? []).length} mesure(s).`);
   },
   'import-cancel'() {
     pendingBackup = null;
@@ -721,6 +724,7 @@ app.addEventListener('change', async (ev) => {
     persist();
   } else if (kind === 'import-file' && el.files?.[0]) {
     const file = el.files[0];
+    el.value = ''; // permet de réimporter le même fichier
     try {
       const result = parseImport(await file.text());
       if (result.kind === 'template') {
@@ -729,7 +733,8 @@ app.addEventListener('change', async (ev) => {
         toast(`Séance « ${t.name} » ajoutée`);
       } else {
         pendingBackup = result.backup;
-        ui.pendingImport = { name: file.name, sessions: result.backup.history.length };
+        const bk = result.backup;
+        ui.pendingImport = { name: file.name, sessions: bk.history.length, templates: bk.templates.length, body: (bk.body ?? []).length };
         render();
       }
     } catch (err) {
