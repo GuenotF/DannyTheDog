@@ -832,10 +832,17 @@ async function updateWakeLock(want: boolean) {
   }
 }
 
+// Au retour sur l'appli (autre onglet, écran rallumé…), on ne recharge l'écran que si les
+// données ont changé ailleurs. Un rendu systématique détruisait le champ de fichier pendant
+// que le sélecteur d'Android était ouvert : l'import ne se déclenchait alors jamais.
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') {
+  if (document.visibilityState !== 'visible') return;
+  if (localStorage.getItem('dannythedog:data') !== JSON.stringify(data)) {
     data = load();
     render();
+  } else {
+    tick();
+    updateWakeLock(route() === 'seance');
   }
 });
 

@@ -77,6 +77,21 @@ test.describe('Données : export et import', () => {
     expect(ids).toEqual(['A', 'B', 'C', 'A2']);
   });
 
+  test('import après retour du sélecteur de fichiers (mobile) : la fenêtre d’import s’affiche', async ({ app }) => {
+    await app.getByRole('link', { name: 'Données et sauvegarde' }).click();
+    const download = app.waitForEvent('download');
+    await app.locator('button[data-action=export-all]').click();
+    const path = await (await download).path();
+    // Sur Android, le sélecteur masque la page : au retour, « visibilitychange » est émis
+    // AVANT l'événement « change » du champ de fichier.
+    const input = await app.locator('input[data-change=import-file]').elementHandle();
+    await app.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await input!.setInputFiles(path);
+    await expect(app.getByRole('dialog', { name: 'Importer une sauvegarde' })).toBeVisible();
+    await app.locator('button[data-action=import-merge]').click();
+    await expect(toast(app)).toContainText('Rien de nouveau');
+  });
+
   test('fichier invalide', async ({ app }) => {
     await app.getByRole('link', { name: 'Données et sauvegarde' }).click();
     await app.locator('input[data-change=import-file]').setInputFiles({ name: 'x.json', mimeType: 'application/json', buffer: Buffer.from('{"foo":1}') });
