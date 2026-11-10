@@ -6,13 +6,14 @@ import { decide } from './progression';
 const KEY = 'dannythedog:data';
 
 export function seed(): AppData {
-  const exercises = exercisesJson as Exercise[];
+  // Copies profondes : les JSON importés sont partagés et ne doivent jamais être modifiés.
+  const exercises = structuredClone(exercisesJson) as Exercise[];
   const progress: Record<string, ExerciseProgress> = {};
   for (const ex of exercises) progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
   return {
     version: 1,
     exercises,
-    templates: templatesJson as Template[],
+    templates: structuredClone(templatesJson) as Template[],
     progress,
     history: [],
     body: [],
@@ -47,7 +48,7 @@ export function save(data: AppData): void {
 function withNewCatalogEntries(data: AppData): AppData {
   if (!Array.isArray(data.body)) data.body = [];
   for (const ex of exercisesJson as Exercise[]) {
-    if (!data.exercises.some((e) => e.id === ex.id)) data.exercises.push(ex);
+    if (!data.exercises.some((e) => e.id === ex.id)) data.exercises.push({ ...ex });
     if (!data.progress[ex.id]) data.progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
   }
   return data;

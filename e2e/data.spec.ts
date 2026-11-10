@@ -68,6 +68,18 @@ test.describe('Données : export et import', () => {
     expect((await readData(app)).history).toHaveLength(0);
   });
 
+  test('effacer remet aussi les séances du programme de base', async ({ app }) => {
+    await app.getByRole('link', { name: 'Gérer mes séances' }).click();
+    await app.locator('button[data-action=tpl-edit][data-id=A]').click();
+    await app.locator('input[data-change=ed-name]').fill('Ma séance perso');
+    await app.locator('input[data-change=ed-name]').blur();
+    await app.locator('button[data-action=ed-save]').click();
+    await app.goto('./#/donnees');
+    await app.locator('button[data-action=clear-ask]').click();
+    await app.locator('button[data-action=clear-confirm]').click();
+    expect((await readData(app)).templates[0].name).toBe('Séance A — Squat');
+  });
+
   test('une sauvegarde V1 (sans mesures) s’importe toujours', async ({ app }) => {
     await app.getByRole('link', { name: 'Données et sauvegarde' }).click();
     const v1 = await app.evaluate(() => {

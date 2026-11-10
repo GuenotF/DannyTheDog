@@ -7,6 +7,10 @@ export interface Exercise {
   /** Pas d'ajustement de la charge (kg) ou du temps (s) pour le gainage. */
   step: number;
   startWeight: number | null;
+  /** Créé par l'utilisateur (étiquette « perso »). */
+  custom?: boolean;
+  /** Supprimé du catalogue : masqué, mais gardé pour l'historique. */
+  archived?: boolean;
 }
 
 export interface TemplateItem {

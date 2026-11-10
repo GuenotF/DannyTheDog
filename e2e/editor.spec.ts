@@ -62,7 +62,7 @@ test.describe('Éditeur de séances', () => {
     await app.locator('button[data-action=ed-add]').click();
     await app.locator('input[data-input=pick-query]').fill('curl');
     await expect(app.locator('.pick-row')).toHaveCount(3);
-    await expect(app.locator('.pick-row', { hasText: 'Leg curl' })).toContainText('déjà dans la séance');
+    await expect(app.locator('.pick-row', { hasText: 'Leg curl' })).toContainText('dans la séance');
     await app.locator('button[data-action=pick-filter][data-kind=heavy]').click();
     await expect(app.getByText('Aucun exercice trouvé.')).toBeVisible();
 
@@ -132,5 +132,76 @@ test.describe('Éditeur de séances', () => {
     await app.locator('button[data-action=ed-save]').click();
     await app.goto('./#/seance');
     await expect(app.locator('.exercise').first()).toContainText('Squat barre');
+  });
+
+  test('fiche exercice depuis la carte : renommer un exercice créé par erreur', async ({ app }) => {
+    await app.locator('button[data-action=tpl-edit][data-id=A]').click();
+    await app.locator('button[data-action=ed-add]').click();
+    await app.locator('input[data-input=pick-query]').fill('hip');
+    await app.locator('button[data-action=pick-create]').click();
+    await app.locator('button[data-action=pick-create-save]').click();
+    const card = app.locator('.ed-card').last();
+    await expect(card).toContainText('perso');
+    await card.locator('button[data-action=ed-settings]').click();
+    await app.locator('button[data-action=ed-fiche]').click();
+    const fiche = app.getByRole('dialog', { name: "Modifier l'exercice" });
+    await expect(fiche.locator('input[data-change=fiche-name]')).toHaveValue('hip');
+    await fiche.locator('input[data-change=fiche-name]').fill('Hip thrust');
+    await fiche.locator('input[data-change=fiche-name]').blur();
+    await fiche.locator('button[data-action=fiche-kind][data-kind=heavy]').click();
+    await fiche.locator('button[data-action=fiche-save]').click();
+    await expect(app.locator('.ed-card').last()).toContainText('Hip thrust');
+    await expect(app.locator('.ed-card').last()).toContainText('Lourd');
+    await app.locator('button[data-action=ed-save]').click();
+    const ex = (await readData(app)).exercises.find((e: { id: string }) => e.id === 'hip');
+    expect(ex).toMatchObject({ name: 'Hip thrust', kind: 'heavy', custom: true });
+  });
+
+  test('fiche exercice depuis le catalogue : supprimer (archivé, historique conservé)', async ({ app }) => {
+    // Une séance A faite avant, pour vérifier que l'historique garde le nom
+    await app.getByRole('link', { name: "Retour à l'accueil" }).click();
+    await startSession(app, 'A');
+    await app.locator('header button[data-action=finish]').click();
+    await app.locator('button[data-action=commit]').click();
+    await app.goto('./#/seances');
+
+    await app.locator('button[data-action=tpl-edit][data-id=A]').click();
+    await app.locator('button[data-action=ed-add]').click();
+    await app.locator('input[data-input=pick-query]').fill('face');
+    await app.locator('button[data-action=pick-edit][data-id=face-pull]').click();
+    const fiche = app.getByRole('dialog', { name: "Modifier l'exercice" });
+    await expect(fiche).toContainText("Séance A — Squat (en cours d'édition)");
+    await expect(fiche).toContainText("1 séance dans l'historique");
+    await fiche.locator('button[data-action=fiche-delete-ask]').click();
+    await fiche.locator('button[data-action=fiche-delete-cancel]').click();
+    await fiche.locator('button[data-action=fiche-delete-ask]').click();
+    await fiche.locator('button[data-action=fiche-delete]').click();
+    await expect(toast(app)).toContainText('Enregistre la séance pour valider');
+    await expect(app.locator('.pick-row')).toHaveCount(0); // retiré du catalogue
+    await app.locator('button[data-action=pick-close]').first().click();
+    await expect(app.locator('.ed-card', { hasText: 'Face pull' })).toHaveCount(0);
+    await app.locator('button[data-action=ed-save]').click();
+
+    const data = await readData(app);
+    expect(data.exercises.find((e: { id: string }) => e.id === 'face-pull').archived).toBe(true);
+    const a = data.templates.find((t: { id: string }) => t.id === 'A');
+    expect(a.blocks.flatMap((b: { items: { exerciseId: string }[] }) => b.items.map((i) => i.exerciseId))).not.toContain('face-pull');
+
+    await app.getByRole('link', { name: "Retour à l'accueil" }).click();
+    await app.getByRole('link', { name: 'Historique' }).click();
+    await app.locator('button[data-action=hist-toggle]').first().click();
+    await expect(app.locator('.hist-detail')).toContainText('Face pull');
+  });
+
+  test('annuler l’édition annule aussi une suppression d’exercice', async ({ app }) => {
+    await app.locator('button[data-action=tpl-edit][data-id=A]').click();
+    await app.locator('button[data-action=ed-settings][data-key="0-0"]').click();
+    await app.locator('button[data-action=ed-fiche]').click();
+    await app.locator('button[data-action=fiche-delete-ask]').click();
+    await app.locator('button[data-action=fiche-delete]').click();
+    await app.locator('button[data-action=ed-cancel]').click();
+    const data = await readData(app);
+    expect(data.exercises.find((e: { id: string }) => e.id === 'squat').archived).toBeUndefined();
+    expect(data.templates[0].blocks[0].items[0].exerciseId).toBe('squat');
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { seed } from './store';
 import {
-  commitDraft, createExercise, linkWithPrevious, moveItem, newDraft, nextFreeId, relabel, removeItem, unlink, validateDraft
+  commitDraft, createExercise, exerciseUsage, removeExerciseFrom, linkWithPrevious, moveItem, newDraft, nextFreeId, relabel, removeItem, unlink, validateDraft
 } from './editor';
 
 const ids = (t: { blocks: { items: { exerciseId: string }[] }[] }) => t.blocks.map((b) => b.items.map((i) => i.exerciseId).join('+'));
@@ -44,7 +44,7 @@ describe('éditeur de séances', () => {
     const d = newDraft(data, data.templates[0]);
     d.template.name = 'Séance A bis';
     expect(data.templates[0].name).toBe('Séance A — Squat');
-    d.exercises['squat'] = { kind: 'heavy', step: 5, weight: 40 };
+    d.exercises['squat'] = { name: 'Squat barre', kind: 'heavy', step: 5, weight: 40 };
     const ex = createExercise(data, d, 'Hip thrust', 'isolation', 5, 40);
     d.template.blocks.push({ rest: 90, items: [{ exerciseId: ex.id, sets: 3, repsMin: 10, repsMax: 12 }] });
     expect(validateDraft(data, d)).toBeNull();
@@ -71,5 +71,33 @@ describe('éditeur de séances', () => {
     expect(d.originalId).toBeNull();
     commitDraft(data, d);
     expect(data.templates).toHaveLength(4);
+  });
+
+  it('renomme un exercice et archive un exercice supprimé', () => {
+    const data = seed();
+    data.history = [{ id: 'h', templateId: 'A', templateName: 'A', startedAt: 0, endedAt: 1, feeling: null, decisions: [],
+      blocks: [{ rest: 90, exercises: [{ exerciseId: 'face-pull', repsMin: 15, repsMax: 15, sets: [] }] }] }];
+    const d = newDraft(data, data.templates[0]);
+    d.exercises['leg-curl'] = { name: 'Leg curl allongé', kind: 'isolation', step: 2.5, weight: 30 };
+    expect(exerciseUsage(data, d, 'face-pull')).toEqual({ templates: ["Séance A — Squat (en cours d'édition)"], sessions: 1 });
+    d.deleted.push('face-pull');
+    removeExerciseFrom(d.template, 'face-pull');
+    commitDraft(data, d);
+    expect(data.exercises.find((e) => e.id === 'leg-curl')!.name).toBe('Leg curl allongé');
+    const fp = data.exercises.find((e) => e.id === 'face-pull')!;
+    expect(fp.archived).toBe(true);
+    const a = data.templates.find((t) => t.id === 'A')!;
+    expect(a.blocks.flatMap((b) => b.items.map((i) => i.exerciseId))).not.toContain('face-pull');
+    expect(a.blocks.map((b) => b.label ?? '-')).toEqual(['-', '-', '-', '-', 'S1']);
+  });
+
+  it('un exercice créé puis supprimé avant enregistrement n’entre pas au catalogue', () => {
+    const data = seed();
+    const d = newDraft(data, data.templates[0]);
+    const ex = createExercise(data, d, 'hip', 'isolation', 2.5, 20);
+    expect(ex.custom).toBe(true);
+    d.deleted.push(ex.id);
+    commitDraft(data, d);
+    expect(data.exercises.some((e) => e.id === 'hip')).toBe(false);
   });
 });

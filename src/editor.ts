@@ -3,6 +3,7 @@ import { exerciseById, progressOf } from './store';
 
 /** Réglages d'exercice modifiés dans l'éditeur (appliqués au catalogue à l'enregistrement). */
 export interface ExerciseDraft {
+  name: string;
   kind: ExerciseKind;
   step: number;
   weight: number | null;
@@ -15,6 +16,8 @@ export interface EditorDraft {
   exercises: Record<string, ExerciseDraft>;
   /** Exercices créés pendant l'édition, ajoutés au catalogue à l'enregistrement. */
   created: Exercise[];
+  /** Exercices supprimés du catalogue pendant l'édition (archivés à l'enregistrement). */
+  deleted: string[];
 }
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -31,13 +34,13 @@ export function nextFreeId(data: AppData, exclude: string | null = null): string
 }
 
 export function newDraft(data: AppData, from?: Template, duplicate = false): EditorDraft {
-  if (from && !duplicate) return { originalId: from.id, template: clone(from), exercises: {}, created: [] };
+  if (from && !duplicate) return { originalId: from.id, template: clone(from), exercises: {}, created: [], deleted: [] };
   if (from && duplicate) {
     const id = nextFreeId(data);
-    return { originalId: null, template: { ...clone(from), id, name: `${from.name} (copie)` }, exercises: {}, created: [] };
+    return { originalId: null, template: { ...clone(from), id, name: `${from.name} (copie)` }, exercises: {}, created: [], deleted: [] };
   }
   const id = nextFreeId(data);
-  return { originalId: null, template: { id, name: `Séance ${id}`, day: 0, optional: false, blocks: [] }, exercises: {}, created: [] };
+  return { originalId: null, template: { id, name: `Séance ${id}`, day: 0, optional: false, blocks: [] }, exercises: {}, created: [], deleted: [] };
 }
 
 /** Exercice vu par l'éditeur : catalogue + exercices créés + réglages en cours. */
@@ -46,7 +49,7 @@ export function draftExercise(data: AppData, d: EditorDraft, id: string): Exerci
   const over = d.exercises[id];
   const createdStart = d.created.find((e) => e.id === id)?.startWeight ?? null;
   const weight = over ? over.weight : d.created.some((e) => e.id === id) ? createdStart : progressOf(data, id).weight;
-  return { ...base, kind: over?.kind ?? base.kind, step: over?.step ?? base.step, weight };
+  return { ...base, name: over?.name ?? base.name, kind: over?.kind ?? base.kind, step: over?.step ?? base.step, weight };
 }
 
 export function defaultItem(ex: Exercise): TemplateItem {
@@ -123,6 +126,7 @@ export function commitDraft(data: AppData, d: EditorDraft): Template {
   t.name = t.name.trim();
   relabel(t);
   for (const ex of d.created) {
+    if (d.deleted.includes(ex.id)) continue;
     if (!data.exercises.some((e) => e.id === ex.id)) {
       data.exercises.push({ ...ex });
       data.progress[ex.id] = { weight: ex.startWeight, failStreak: 0, lastChange: 0 };
@@ -131,6 +135,7 @@ export function commitDraft(data: AppData, d: EditorDraft): Template {
   for (const [id, over] of Object.entries(d.exercises)) {
     const ex = data.exercises.find((e) => e.id === id);
     if (!ex) continue;
+    if (over.name.trim()) ex.name = over.name.trim();
     ex.kind = over.kind;
     ex.step = over.step;
     const p = progressOf(data, id);
@@ -139,7 +144,33 @@ export function commitDraft(data: AppData, d: EditorDraft): Template {
   const i = d.originalId ? data.templates.findIndex((x) => x.id === d.originalId) : -1;
   if (i >= 0) data.templates[i] = t;
   else data.templates.push(t);
+  for (const id of d.deleted) archiveExercise(data, id);
   return t;
+}
+
+/** Supprime un exercice du catalogue : archivé (l'historique garde son nom) et retiré de toutes les séances. */
+export function archiveExercise(data: AppData, id: string): void {
+  const ex = data.exercises.find((e) => e.id === id);
+  if (ex) ex.archived = true;
+  for (const t of data.templates) {
+    removeExerciseFrom(t, id);
+    relabel(t);
+  }
+}
+
+export function removeExerciseFrom(t: Template, id: string): void {
+  for (const b of t.blocks) b.items = b.items.filter((it) => it.exerciseId !== id);
+  t.blocks = t.blocks.filter((b) => b.items.length > 0);
+}
+
+/** Où un exercice est utilisé (séances autres que celle en cours d'édition, et historique). */
+export function exerciseUsage(data: AppData, d: EditorDraft, id: string): { templates: string[]; sessions: number } {
+  const templates = data.templates
+    .filter((t) => t.id !== d.originalId && t.blocks.some((b) => b.items.some((i) => i.exerciseId === id)))
+    .map((t) => t.name);
+  if (d.template.blocks.some((b) => b.items.some((i) => i.exerciseId === id))) templates.unshift(`${d.template.name} (en cours d'édition)`);
+  const sessions = data.history.filter((h) => h.blocks.some((b) => b.exercises.some((e) => e.exerciseId === id))).length;
+  return { templates, sessions };
 }
 
 export function deleteTemplate(data: AppData, id: string): void {
@@ -153,7 +184,7 @@ export function createExercise(data: AppData, d: EditorDraft, name: string, kind
   let id = base;
   let n = 2;
   while (data.exercises.some((e) => e.id === id) || d.created.some((e) => e.id === id)) id = `${base}-${n++}`;
-  const ex: Exercise = { id, name: name.trim(), kind, step, startWeight: kind === 'timed' || kind === 'bodyweight' ? null : start };
+  const ex: Exercise = { id, name: name.trim(), kind, step, startWeight: kind === 'timed' || kind === 'bodyweight' ? null : start, custom: true };
   d.created.push(ex);
   return ex;
 }

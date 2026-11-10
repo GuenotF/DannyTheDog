@@ -1,6 +1,6 @@
 import type { AppData, ExerciseKind } from '../types';
 import { escapeHtml as e, formatNumber, formatWeight } from '../format';
-import { draftExercise, type EditorDraft } from '../editor';
+import { draftExercise, exerciseUsage, type EditorDraft } from '../editor';
 import { exerciseById } from '../store';
 
 export interface PickerState {
@@ -8,7 +8,7 @@ export interface PickerState {
   bi?: number;
   xi?: number;
   query: string;
-  filter: ExerciseKind | 'all';
+  filter: ExerciseKind | 'all' | 'custom';
   create: boolean;
   name: string;
   kind: ExerciseKind;
@@ -16,12 +16,27 @@ export interface PickerState {
   start: number;
 }
 
+export interface FicheState {
+  id: string;
+  /** D'où la fiche a été ouverte : la carte d'exercice ou le catalogue. */
+  from: 'card' | 'catalog';
+  name: string;
+  kind: ExerciseKind;
+  step: number;
+  weight: number | null;
+  confirm: boolean;
+}
+
 export interface EditorUi {
   draft: EditorDraft | null;
   open: string | null;
   picker: PickerState | null;
+  fiche: FicheState | null;
   confirmDelete: boolean;
 }
+
+const persoTag = '<span class="tag-perso">perso</span>';
+const pencil = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path></svg>';
 
 export const KIND_LABEL: Record<ExerciseKind, string> = { heavy: 'Lourd', isolation: 'Isolation', timed: 'Temps', bodyweight: 'Poids du corps' };
 const KIND_HELP: Record<ExerciseKind, string> = {
@@ -77,9 +92,10 @@ export function renderEditor(data: AppData, ui: EditorUi): string {
       const noWeight = ex.kind === 'timed' || ex.kind === 'bodyweight';
       const settings = open ? `
         <div class="ex-settings">
-          <span class="muted xsmall">Réglages de l'exercice, valables dans toutes les séances</span>
-          ${kindButtons(ex.kind, 'ed-kind', key)}
-          <span class="muted xsmall">${KIND_HELP[ex.kind]}</span>
+          <div class="row between">
+            <span class="muted xsmall">Réglages rapides</span>
+            <button type="button" class="btn btn-small" data-action="ed-fiche" data-key="${key}">${pencil} Éditer</button>
+          </div>
           <div class="tiles">
             ${stepper('Pas de charge', `${formatNumber(ex.step)}${timed ? ' s' : ' kg'}`, key, 'step')}
             ${noWeight ? '' : `
@@ -99,7 +115,7 @@ export function renderEditor(data: AppData, ui: EditorUi): string {
         <article class="card ed-card">
           <div class="row" style="gap:2px">
             <button type="button" class="ed-name" data-action="ed-replace" data-key="${key}" aria-label="Changer d'exercice : ${e(ex.name)}">
-              <span style="font-size:15px;font-weight:700">${e(ex.name)}</span>
+              <span class="row" style="gap:8px"><span style="font-size:15px;font-weight:700">${e(ex.name)}</span>${ex.custom ? persoTag : ''}</span>
               <span class="muted xsmall">${KIND_LABEL[ex.kind]}${noWeight ? '' : ' · ' + formatWeight(ex.weight)} · toucher pour changer</span>
             </button>
             ${iconBtn('ed-up', `Monter ${e(ex.name)}`, '<path d="M6 15l6-6 6 6"></path>')}
@@ -174,7 +190,7 @@ export function renderEditor(data: AppData, ui: EditorUi): string {
       ${del}
     </main>
   </div>
-  ${ui.picker ? renderPicker(data, ui) : ''}`;
+  ${ui.fiche ? renderFiche(data, ui) : ui.picker ? renderPicker(data, ui) : ''}`;
 }
 
 /** Liste filtrée du panneau (re-rendue seule pendant la frappe). */
@@ -184,8 +200,9 @@ export function renderPickerList(data: AppData, ui: EditorUi): string {
   const norm = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const inSession = new Set(d.template.blocks.flatMap((b) => b.items.map((i) => i.exerciseId)));
   const all = [...data.exercises, ...d.created]
+    .filter((x) => !x.archived && !d.deleted.includes(x.id))
     .map((x) => draftExercise(data, d, x.id))
-    .filter((x) => (p.filter === 'all' || x.kind === p.filter) && norm(x.name).includes(norm(p.query)))
+    .filter((x) => (p.filter === 'all' || (p.filter === 'custom' ? x.custom : x.kind === p.filter)) && norm(x.name).includes(norm(p.query)))
     .sort((a, b) => a.name.localeCompare(b.name, 'fr'));
   if (all.length === 0) return `<span class="muted small" style="padding:14px 0;display:block">Aucun exercice trouvé.</span>`;
   return all.map((x) => {
@@ -194,8 +211,9 @@ export function renderPickerList(data: AppData, ui: EditorUi): string {
     const already = inSession.has(x.id);
     return `
       <div class="pick-row">
-        <span class="section" style="flex:1;gap:2px;min-width:0"><span style="font-size:15px;font-weight:600">${e(x.name)}</span><span class="muted xsmall">${e(meta)}</span></span>
-        ${already ? '<span class="muted xsmall" style="padding-right:6px">déjà dans la séance</span>' : `<button type="button" class="btn" data-action="pick-choose" data-id="${e(x.id)}">${p.mode === 'replace' ? 'Choisir' : 'Ajouter'}</button>`}
+        <span class="section" style="flex:1;gap:2px;min-width:0"><span class="row" style="gap:8px"><span style="font-size:15px;font-weight:600">${e(x.name)}</span>${x.custom ? persoTag : ''}</span><span class="muted xsmall">${e(meta)}</span></span>
+        ${already ? '<span class="muted xsmall">dans la séance</span>' : `<button type="button" class="btn" data-action="pick-choose" data-id="${e(x.id)}">${p.mode === 'replace' ? 'Choisir' : 'Ajouter'}</button>`}
+        <button type="button" class="ed-icon" style="width:44px" data-action="pick-edit" data-id="${e(x.id)}" aria-label="Modifier ${e(x.name)}">${pencil}</button>
       </div>`;
   }).join('');
 }
@@ -205,8 +223,8 @@ function renderPicker(data: AppData, ui: EditorUi): string {
   const title = p.create ? 'Nouvel exercice' : p.mode === 'replace' ? 'Changer d\'exercice' : 'Ajouter un exercice';
   let body: string;
   if (!p.create) {
-    const filters = (['all', ...KINDS] as const).map((f) =>
-      `<button type="button" class="chip" data-action="pick-filter" data-kind="${f}" aria-pressed="${p.filter === f}">${f === 'all' ? 'Tous' : KIND_LABEL[f]}</button>`).join('');
+    const filters = (['all', 'custom', ...KINDS] as const).map((f) =>
+      `<button type="button" class="chip" data-action="pick-filter" data-kind="${f}" aria-pressed="${p.filter === f}">${f === 'all' ? 'Tous' : f === 'custom' ? 'Mes exercices' : KIND_LABEL[f]}</button>`).join('');
     body = `
       <label class="search">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M20 20l-4-4"></path></svg>
@@ -215,6 +233,7 @@ function renderPicker(data: AppData, ui: EditorUi): string {
       </label>
       <div class="chips" role="group" aria-label="Filtrer par type">${filters}</div>
       <div class="pick-list" id="pick-list">${renderPickerList(data, ui)}</div>
+      <span class="muted xsmall" style="padding:0 4px">Le crayon ouvre la fiche de l'exercice : nom, type, pas, charge, suppression.</span>
       <button type="button" class="btn btn-dashed" data-action="pick-create">Créer un exercice<span id="pick-create-suffix">${p.query ? ` « ${e(p.query)} »` : ''}</span></button>`;
   } else {
     const noW = p.kind === 'timed' || p.kind === 'bodyweight';
@@ -245,6 +264,46 @@ function renderPicker(data: AppData, ui: EditorUi): string {
   </section>`;
 }
 
-export function exerciseLabel(data: AppData, id: string): string {
-  return exerciseById(data, id).name;
+function renderFiche(data: AppData, ui: EditorUi): string {
+  const f = ui.fiche!;
+  const d = ui.draft!;
+  const usage = exerciseUsage(data, d, f.id);
+  const noW = f.kind === 'timed' || f.kind === 'bodyweight';
+  const usedIn = usage.templates.length ? usage.templates.map((n) => `<span style="font-size:14px">${e(n)}</span>`).join('') : '<span style="font-size:14px">Aucune séance</span>';
+  const sessions = usage.sessions ? `${usage.sessions} séance${usage.sessions > 1 ? 's' : ''} dans l'historique` : 'Jamais fait pour l\'instant';
+  const actions = f.confirm
+    ? `<div class="dialog" role="alertdialog" aria-label="Confirmer la suppression" style="border-color:var(--danger)">
+        <span style="font-size:14px;font-weight:700">Supprimer « ${e(f.name || exerciseById(data, f.id).name)} » ?</span>
+        <span class="small" style="color:var(--text-2)">Il sera retiré du catalogue${usage.templates.length ? ' et des séances qui l\'utilisent' : ''}. Les séances déjà faites le gardent dans l'historique.</span>
+        <button type="button" class="btn" style="color:var(--danger);border-color:var(--danger)" data-action="fiche-delete">Oui, supprimer l'exercice</button>
+        <button type="button" class="btn btn-ghost" data-action="fiche-delete-cancel">Annuler</button>
+      </div>`
+    : `<button type="button" class="btn btn-primary" data-action="fiche-save">Enregistrer</button>
+       <button type="button" class="btn btn-danger" data-action="fiche-delete-ask">Supprimer l'exercice…</button>`;
+  return `
+  <div class="sheet-backdrop" data-action="fiche-back"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-label="Modifier l'exercice">
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <div class="row">
+      <button type="button" class="icon-btn" data-action="fiche-back" aria-label="${f.from === 'catalog' ? 'Retour au catalogue' : 'Fermer'}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg></button>
+      <h2 class="title" style="font-size:22px;flex:1">Modifier l'exercice</h2>
+    </div>
+    <label class="field-label">Nom<input class="text-input" style="font-weight:600;height:48px" value="${e(f.name)}" data-change="fiche-name"></label>
+    <div class="section" style="gap:6px">
+      <span class="field-label">Type (règle de progression)</span>
+      ${kindButtons(f.kind, 'fiche-kind')}
+      <span class="muted xsmall">${KIND_HELP[f.kind]}</span>
+    </div>
+    <div class="tiles">
+      ${stepper('Pas de charge', `${formatNumber(f.step)}${f.kind === 'timed' ? ' s' : ' kg'}`, 'fiche', 'fiche-step')}
+      ${noW ? '' : stepper('Charge actuelle', formatWeight(f.weight), 'fiche', 'fiche-weight')}
+    </div>
+    <div class="card section" style="gap:4px;padding:12px">
+      <span class="muted xsmall">Utilisé dans</span>
+      ${usedIn}
+      <span class="muted small">${sessions}</span>
+    </div>
+    <div style="flex:1"></div>
+    ${actions}
+  </section>`;
 }

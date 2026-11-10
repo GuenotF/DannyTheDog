@@ -28,7 +28,8 @@ Sur Android, ouvre le lien dans Chrome puis « Ajouter à l'écran d'accueil » 
 - **Mes séances** (lien « Gérer mes séances » sur l'accueil) : modifier, dupliquer, supprimer, créer.
 - **Modifier une séance** : lettre, nom, jour prévu, séance optionnelle ; pour chaque exercice séries, reps min/max (ou durée), repos ; réordonner (↑ ↓), lier/dissocier les supersets, changer ou retirer un exercice.
 - **Réglages d'exercice** (⚙) : type (lourd, isolation, temps, poids du corps), pas de charge, charge actuelle — valables dans toutes les séances.
-- **Catalogue** : recherche, filtre par type, création d'un exercice.
+- **Catalogue** : recherche, filtre par type ou « Mes exercices » (étiquette « perso »), création d'un exercice.
+- **Fiche exercice** (bouton « Éditer » du ⚙ ou crayon du catalogue) : renommer, changer le type, le pas et la charge, voir où il est utilisé, le supprimer. Un exercice supprimé est archivé : retiré du catalogue et des séances, mais conservé dans l'historique.
 - Rien n'est modifié avant « Enregistrer » ; une séance en cours n'est pas affectée.
 
 ## Données de base

@@ -18,7 +18,7 @@ import { renderTemplates } from './ui/templates';
 import { renderEditor, renderPickerList, type EditorUi } from './ui/editorView';
 import {
   addItem, commitDraft, createExercise, defaultItem, deleteTemplate, draftExercise, linkWithPrevious,
-  moveItem, newDraft, removeItem, replaceItem, unlink, validateDraft
+  moveItem, newDraft, removeExerciseFrom, removeItem, replaceItem, unlink, validateDraft
 } from './editor';
 import type { ExerciseKind } from './types';
 
@@ -37,13 +37,20 @@ function resetBodyDraft() {
   body.draftWaist = d.waist;
 }
 resetBodyDraft();
-const editor: EditorUi = { draft: null, open: null, picker: null, confirmDelete: false };
+const editor: EditorUi = { draft: null, open: null, picker: null, fiche: null, confirmDelete: false };
+
+function openFiche(id: string, from: 'card' | 'catalog') {
+  const ex = draftExercise(data, editor.draft!, id);
+  editor.fiche = { id, from, name: ex.name, kind: ex.kind, step: ex.step, weight: ex.weight, confirm: false };
+  render();
+}
 let tplConfirmDelete: string | null = null;
 
 function openEditor(draft: ReturnType<typeof newDraft>) {
   editor.draft = draft;
   editor.open = null;
   editor.picker = null;
+  editor.fiche = null;
   editor.confirmDelete = false;
   go('edition');
 }
@@ -59,7 +66,7 @@ function exDraftOf(id: string) {
   const d = editor.draft!;
   if (!d.exercises[id]) {
     const ex = draftExercise(data, d, id);
-    d.exercises[id] = { kind: ex.kind, step: ex.step, weight: ex.weight };
+    d.exercises[id] = { name: ex.name, kind: ex.kind, step: ex.step, weight: ex.weight };
   }
   return d.exercises[id];
 }
@@ -435,6 +442,12 @@ const actions: Record<string, (el: HTMLElement) => void> = {
   'ed-field'(el) {
     const dir = Number(el.dataset.dir);
     const field = el.dataset.field!;
+    if (field === 'fiche-step' || field === 'fiche-weight') {
+      const f = editor.fiche!;
+      if (field === 'fiche-step') f.step = Math.max(0.5, f.step + 0.5 * dir);
+      else f.weight = Math.max(0, roundToStep((f.weight ?? 0) + f.step * dir, f.step));
+      return render();
+    }
     if (field === 'new-step' || field === 'new-start') {
       const p = editor.picker!;
       if (field === 'new-step') p.step = Math.max(0.5, p.step + 0.5 * dir);
@@ -513,12 +526,51 @@ const actions: Record<string, (el: HTMLElement) => void> = {
     editor.confirmDelete = false;
     render();
   },
+  'ed-fiche'(el) {
+    openFiche(edKey(el.dataset.key!).item.exerciseId, 'card');
+  },
+  'pick-edit'(el) {
+    openFiche(el.dataset.id!, 'catalog');
+  },
+  'fiche-back'() {
+    editor.fiche = null;
+    render();
+  },
+  'fiche-kind'(el) {
+    editor.fiche!.kind = el.dataset.kind as ExerciseKind;
+    render();
+  },
+  'fiche-save'() {
+    const f = editor.fiche!;
+    if (!f.name.trim()) return toast("Donne un nom à l'exercice");
+    const o = exDraftOf(f.id);
+    Object.assign(o, { name: f.name.trim(), kind: f.kind, step: f.step, weight: f.weight });
+    editor.fiche = null;
+    render();
+  },
+  'fiche-delete-ask'() {
+    editor.fiche!.confirm = true;
+    render();
+  },
+  'fiche-delete-cancel'() {
+    editor.fiche!.confirm = false;
+    render();
+  },
+  'fiche-delete'() {
+    const d = editor.draft!;
+    const f = editor.fiche!;
+    if (!d.deleted.includes(f.id)) d.deleted.push(f.id);
+    removeExerciseFrom(d.template, f.id);
+    editor.fiche = null;
+    editor.open = null;
+    toast(`« ${f.name} » supprimé. Enregistre la séance pour valider.`);
+  },
   'pick-close'() {
     editor.picker = null;
     render();
   },
   'pick-filter'(el) {
-    editor.picker!.filter = el.dataset.kind as ExerciseKind | 'all';
+    editor.picker!.filter = el.dataset.kind as ExerciseKind | 'all' | 'custom';
     render();
   },
   'pick-choose'(el) {
@@ -660,6 +712,8 @@ app.addEventListener('change', async (ev) => {
     const v = parseDecimal(el.value);
     if (v !== undefined) exDraftOf(item.exerciseId).weight = v;
     render();
+  } else if (kind === 'fiche-name' && editor.fiche) {
+    editor.fiche.name = el.value;
   } else if (kind === 'pick-name' && editor.picker) {
     editor.picker.name = el.value;
   } else if (kind === 'apply-next') {
