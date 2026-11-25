@@ -40,8 +40,8 @@ const pencil = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stro
 
 export const KIND_LABEL: Record<ExerciseKind, string> = { heavy: 'Lourd', isolation: 'Isolation', timed: 'Temps', bodyweight: 'Poids du corps' };
 const KIND_HELP: Record<ExerciseKind, string> = {
-  heavy: '+pas si toutes les séries atteignent le minimum ; −10 % au 2e échec.',
-  isolation: '+pas quand toutes les séries atteignent le maximum.',
+  heavy: '+pas si la dernière série atteint le maximum de reps ; −10 % au 2e échec (série sous le minimum).',
+  isolation: '+pas si la dernière série atteint le maximum de reps ; sinon on garde.',
   timed: 'Pas de charge, objectif en secondes.',
   bodyweight: 'Pas de charge, objectif en reps.'
 };

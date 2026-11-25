@@ -142,6 +142,20 @@ test.describe('Fin de séance et progression', () => {
     expect(data.progress.squat.weight).toBe(27.5);
   });
 
+  test('hausse décidée par la dernière série : au max → +pas, sinon on garde', async ({ app }) => {
+    await startSession(app);
+    // Leg curl (bloc 4, exercice 0) : 3 × 10–12, pré-rempli à 12. Première série à 10 seulement.
+    for (let i = 0; i < 2; i++) await app.locator('button[data-key="4-0-0"][data-action=reps][data-dir="-1"]').click();
+    // Tirage horizontal (bloc 2) : 3 × 8–12, dernière série à 11.
+    await app.locator('button[data-key="2-0-2"][data-action=reps][data-dir="-1"]').click();
+    await completeAllSets(app);
+    await app.locator('header button[data-action=finish]').click();
+    await expect(app.locator('button.decision', { hasText: 'Leg curl' })).toContainText('32,5 kg');
+    const row = app.locator('button.decision', { hasText: 'Tirage horizontal' });
+    await expect(row).toContainText('20 kg');
+    await expect(row).toContainText('vise 12 à la dernière série');
+  });
+
   test('la charge proposée peut être forcée avant d’enregistrer', async ({ app }) => {
     await startSession(app);
     await completeAllSets(app);

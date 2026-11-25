@@ -23,9 +23,13 @@ describe('roundToStep', () => {
 
 describe('exercice lourd', () => {
   const fresh = { weight: 30, failStreak: 0, lastChange: 0 };
-  it('monte de 2,5 kg quand toutes les séries atteignent le minimum', () => {
-    const d = decide(heavy, log(30, [8, 7, 6, 6], 6, 8), fresh);
+  it('monte de 2,5 kg quand la dernière série atteint le maximum', () => {
+    const d = decide(heavy, log(30, [7, 6, 6, 8], 6, 8), fresh);
     expect(d).toMatchObject({ kind: 'up', from: 30, to: 32.5, failStreak: 0 });
+  });
+  it('garde la charge sans échec si toutes les séries sont dans la fourchette mais pas la dernière au max', () => {
+    const d = decide(heavy, log(30, [8, 8, 7, 7], 6, 8), { ...fresh, failStreak: 1 });
+    expect(d).toMatchObject({ kind: 'same', to: 30, failStreak: 0, note: 'vise 8 à la dernière série' });
   });
   it('garde la charge au premier échec', () => {
     const d = decide(heavy, log(30, [8, 7, 5, 4], 6, 8), fresh);
@@ -40,6 +44,11 @@ describe('exercice lourd', () => {
     l.sets[3].done = false;
     expect(decide(heavy, l, fresh).kind).toBe('same');
   });
+  it('une dernière série au max mais non validée ne compte pas', () => {
+    const l = log(30, [8, 8, 8, 8], 6, 8);
+    l.sets[3].done = false;
+    expect(decide(heavy, l, fresh).kind).toBe('same');
+  });
   it('part de la charge la plus faible utilisée', () => {
     const l = log(32.5, [8, 8, 8], 6, 8);
     l.sets[2].w = 30;
@@ -49,8 +58,11 @@ describe('exercice lourd', () => {
 
 describe('isolation (double progression)', () => {
   const p = { weight: 30, failStreak: 0, lastChange: 0 };
-  it('monte seulement au haut de la fourchette', () => {
-    expect(decide(iso, log(30, [12, 12, 12], 10, 12), p)).toMatchObject({ kind: 'up', to: 32.5 });
+  it('monte quand la dernière série atteint le haut de la fourchette', () => {
+    expect(decide(iso, log(30, [10, 11, 12], 10, 12), p)).toMatchObject({ kind: 'up', to: 32.5 });
+  });
+  it('garde la charge si la dernière série est sous le maximum, même si les autres y sont', () => {
+    expect(decide(iso, log(30, [12, 12, 11], 10, 12), p)).toMatchObject({ kind: 'same', to: 30 });
   });
   it('garde la charge sans jamais baisser', () => {
     expect(decide(iso, log(30, [9, 8, 8], 10, 12), { ...p, failStreak: 5 })).toMatchObject({ kind: 'same', to: 30 });

@@ -15,27 +15,24 @@ export function workingWeight(log: ExerciseLog, fallback: number | null): number
 }
 
 /**
- * Règles du programme :
- * - exercice lourd : toutes les séries faites avec au moins repsMin → +pas.
- *   Sinon échec ; au 2e échec consécutif → −10 % (arrondi au pas).
- * - isolation : double progression. Toutes les séries à repsMax → +pas, sinon on garde.
+ * Règles de progression :
+ * - hausse (exercice lourd ou isolation) : la dernière série est faite au maximum
+ *   de la fourchette de reps → +pas de charge ;
+ * - exercice lourd sinon : si une série est sous le minimum (ou non faite), c'est un échec ;
+ *   au 2e échec consécutif → −10 % (arrondi au pas). Sinon on garde la charge ;
+ * - isolation sinon : on garde la charge (jamais de baisse automatique) ;
  * - gainage / poids du corps : pas de charge, on indique seulement l'objectif.
  */
 export function decide(ex: Exercise, log: ExerciseLog, prev: ExerciseProgress): Decision {
   const unit = ex.kind === 'timed' ? ' s' : '';
   const allDone = log.sets.length > 0 && log.sets.every((s) => s.done);
   const allAtLeast = (n: number) => allDone && log.sets.every((s) => s.reps >= n);
+  const last = log.sets[log.sets.length - 1];
+  const lastAtMax = !!last && last.done && last.reps >= log.repsMax;
+  const aim = `vise ${log.repsMax}${unit} à la dernière série`;
 
   if (ex.kind === 'timed' || ex.kind === 'bodyweight') {
-    const top = allAtLeast(log.repsMax);
-    return {
-      exerciseId: ex.id,
-      from: null,
-      to: null,
-      kind: 'same',
-      note: top ? 'objectif atteint' : `vise ${log.repsMax}${unit} partout`,
-      failStreak: 0
-    };
+    return { exerciseId: ex.id, from: null, to: null, kind: 'same', note: lastAtMax ? 'objectif atteint' : aim, failStreak: 0 };
   }
 
   const from = workingWeight(log, prev.weight);
@@ -43,9 +40,13 @@ export function decide(ex: Exercise, log: ExerciseLog, prev: ExerciseProgress): 
     return { exerciseId: ex.id, from: null, to: null, kind: 'same', note: 'charge à définir', failStreak: 0 };
   }
 
+  if (lastAtMax) {
+    return { exerciseId: ex.id, from, to: roundToStep(from + ex.step, ex.step), kind: 'up', note: `+${formatNumber(ex.step)} kg`, failStreak: 0 };
+  }
+
   if (ex.kind === 'heavy') {
     if (allAtLeast(log.repsMin)) {
-      return { exerciseId: ex.id, from, to: roundToStep(from + ex.step, ex.step), kind: 'up', note: `+${formatNumber(ex.step)} kg`, failStreak: 0 };
+      return { exerciseId: ex.id, from, to: from, kind: 'same', note: aim, failStreak: 0 };
     }
     const streak = prev.failStreak + 1;
     if (streak >= 2) {
@@ -54,10 +55,7 @@ export function decide(ex: Exercise, log: ExerciseLog, prev: ExerciseProgress): 
     return { exerciseId: ex.id, from, to: from, kind: 'same', note: '1er échec · on garde', failStreak: streak };
   }
 
-  if (allAtLeast(log.repsMax)) {
-    return { exerciseId: ex.id, from, to: roundToStep(from + ex.step, ex.step), kind: 'up', note: `+${formatNumber(ex.step)} kg`, failStreak: 0 };
-  }
-  return { exerciseId: ex.id, from, to: from, kind: 'same', note: `vise ${log.repsMax} partout`, failStreak: 0 };
+  return { exerciseId: ex.id, from, to: from, kind: 'same', note: aim, failStreak: 0 };
 }
 
 /** Recalcule le type (hausse, maintien, baisse) après une modification manuelle. */

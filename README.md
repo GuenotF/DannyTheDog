@@ -11,8 +11,9 @@ Sur Android, ouvre le lien dans Chrome puis « Ajouter à l'écran d'accueil » 
 - **Séance en cours sur une seule page** : charges et reps pré-remplies, validation d'une série d'un tap, charge modifiable à tout moment (avec option « appliquer aux séries suivantes »), supersets regroupés.
 - **Minuteur de repos** fixé en bas de l'écran, lancé automatiquement à la validation d'une série (vibration et bip à la fin). L'écran reste allumé pendant la séance.
 - **Progression automatique** à la fin de la séance, modifiable avant d'enregistrer :
-  - exercices lourds (squat, développé couché, soulevé de terre, rowing) : toutes les séries faites avec au moins le minimum de reps → +pas ; 2e échec consécutif → −10 % arrondi au pas ;
-  - isolation : double progression, +pas quand toutes les séries atteignent le haut de la fourchette ;
+  - hausse (exercices lourds et isolation) : la dernière série est faite au maximum de la fourchette de reps → +pas de charge ;
+  - exercices lourds sinon : une série sous le minimum (ou non faite) est un échec ; 2e échec consécutif → −10 % arrondi au pas ; sinon on garde ;
+  - isolation sinon : on garde la charge ;
   - gainage / poids du corps : pas de charge, objectif indiqué.
 - **Données** : tout est stocké dans le navigateur (localStorage). Export / import JSON complet (fusion ou remplacement) et partage d'un modèle de séance.
 
